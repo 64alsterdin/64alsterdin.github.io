@@ -310,6 +310,14 @@ const state = {
   selectedPlayerName: null,
   playerFrames: [],
   playerDetailLoading: false,
+
+  // frame history
+  frames: [],
+  framesLoading: false,
+  framesError: null,
+  selectedFrame: null,
+  confirmDeleteId: null,
+  deleting: false,
 };
 
 function render(){
@@ -325,6 +333,8 @@ function render(){
     case 'scoring': app.innerHTML = renderScoring(); break;
     case 'stats': app.innerHTML = renderStats(); break;
     case 'playerDetail': app.innerHTML = renderPlayerDetail(); attachCharts(); break;
+    case 'history': app.innerHTML = renderHistory(); break;
+    case 'frameDetail': app.innerHTML = renderFrameDetail(); break;
     default: app.innerHTML = renderHome();
   }
 }
@@ -355,6 +365,7 @@ function renderHome(){
       <button class="btn" onclick="go('setup')">▶ Start New Frame</button>
       <button class="btn secondary" onclick="loadRoster();go('roster')">Manage Player Roster</button>
       <button class="btn secondary" onclick="loadStats();go('stats')">Player Statistics</button>
+      <button class="btn secondary" onclick="loadFrameHistory();go('history')">Frame History</button>
     </div>`;
 }
 
@@ -660,6 +671,7 @@ function renderStats(){
       <h1>Player Statistics</h1>
     </div>
     <div class="content stack">
+      <button class="btn secondary" onclick="loadFrameHistory();go('history')">📜 View Frame History</button>
       ${state.statsLoading ? `<div class="empty">Loading…</div>` : ''}
       ${state.statsError ? `<div class="error-box">${state.statsError}</div>` : ''}
       ${(!state.statsLoading && state.summaries.length===0) ? `<div class="empty">No completed frames yet.</div>` : ''}
@@ -774,6 +786,152 @@ function drawLineChart(canvas, values, color){
   ctx.stroke();
   ctx.fillStyle = color;
   values.forEach((v,i)=>{ const [x,y]=pt(i); ctx.beginPath(); ctx.arc(x,y,3.5,0,7); ctx.fill(); });
+}
+
+/* ---------- Frame history (list, view, delete) ---------- */
+async function loadFrameHistory(){
+  state.framesLoading = true; state.framesError = null; render();
+  try{
+    const snap = await db.collection('frames').orderBy('createdAt','desc').get();
+    state.frames = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+  } catch(e){ state.framesError = e.message; }
+  state.framesLoading = false; render();
+}
+function openFrameDetail(frameId){
+  const frame = state.frames.find(f => f.id === frameId);
+  if (!frame) return;
+  state.selectedFrame = frame;
+  go('frameDetail');
+}
+function requestDeleteFrame(frameId){ state.confirmDeleteId = frameId; render(); }
+function cancelDeleteFrame(){ state.confirmDeleteId = null; render(); }
+async function confirmDeleteFrame(){
+  const id = state.confirmDeleteId;
+  if (!id) return;
+  state.deleting = true; render();
+  try{
+    await db.collection('frames').doc(id).delete();
+    state.frames = state.frames.filter(f => f.id !== id);
+    // keep player-statistics / player-history views in sync next time they're opened
+    state.summaries = [];
+    state.playerFrames = state.playerFrames.filter(f => f.id !== id);
+    state.confirmDeleteId = null;
+    state.deleting = false;
+    if (state.screen === 'frameDetail' && state.selectedFrame && state.selectedFrame.id === id){
+      state.selectedFrame = null;
+      go('history');
+    } else {
+      render();
+    }
+  } catch(e){
+    state.deleting = false;
+    state.framesError = e.message;
+    render();
+  }
+}
+function renderHistory(){
+  const rows = state.frames.map(f => {
+    const d = new Date(f.createdAt);
+    const dateStr = d.toLocaleDateString([], {day:'2-digit',month:'short',year:'numeric'}) + ' · ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    const teamAScore = (f.teamScores||{}).A ?? (f.teamA||[]).reduce((s,id)=>s+((f.finalScores||{})[id]||0),0);
+    const teamBScore = (f.teamScores||{}).B ?? (f.teamB||[]).reduce((s,id)=>s+((f.finalScores||{})[id]||0),0);
+    const names = id => escapeHtml((f.playerNames||{})[id] || id);
+    const teamAName = (f.teamA||[]).map(names).join(' & ');
+    const teamBName = (f.teamB||[]).map(names).join(' & ');
+    const winner = f.winnerTeam === 'A' ? teamAName : (f.winnerTeam === 'B' ? teamBName : 'Draw');
+    return `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div style="cursor:pointer;flex:1" onclick="openFrameDetail('${f.id}')">
+            <div style="font-size:.75rem;opacity:.6">${dateStr} · ${f.mode==='ONE_V_ONE'?'1v1':'2v2'}</div>
+            <div style="font-weight:600;margin-top:2px">${teamAName} <span class="tabular">${teamAScore}</span> — <span class="tabular">${teamBScore}</span> ${teamBName}</div>
+            <div style="font-size:.8rem;opacity:.7;margin-top:2px">Winner: ${winner}</div>
+          </div>
+          <button class="btn small danger" onclick="event.stopPropagation();requestDeleteFrame('${f.id}')">Delete</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="topbar">
+      <button class="icon-btn" onclick="go('home')">← Back</button>
+      <h1>Frame History</h1>
+    </div>
+    <div class="content stack">
+      ${state.framesLoading ? `<div class="empty">Loading…</div>` : ''}
+      ${state.framesError ? `<div class="error-box">${state.framesError}</div>` : ''}
+      ${(!state.framesLoading && state.frames.length===0) ? `<div class="empty">No saved frames yet.</div>` : ''}
+      ${rows}
+    </div>
+    ${state.confirmDeleteId ? renderDeleteConfirm() : ''}
+  `;
+}
+function renderDeleteConfirm(){
+  return `
+    <div class="modal-backdrop" onclick="if(event.target===this && !${state.deleting}) cancelDeleteFrame()">
+      <div class="modal">
+        <h2>Delete this frame?</h2>
+        <p style="margin-top:10px">This permanently removes the frame and its event log. Every player's statistics will update automatically once it's gone.</p>
+        <div class="row" style="margin-top:18px">
+          <button class="btn secondary" ${state.deleting?'disabled':''} onclick="cancelDeleteFrame()">Cancel</button>
+          <button class="btn danger" ${state.deleting?'disabled':''} onclick="confirmDeleteFrame()">${state.deleting?'Deleting…':'Delete Frame'}</button>
+        </div>
+      </div>
+    </div>`;
+}
+function renderFrameDetail(){
+  const f = state.selectedFrame;
+  if (!f) return `<div class="topbar"><button class="icon-btn" onclick="go('history')">← Back</button><h1>Frame</h1></div><div class="content"><div class="empty">Frame not found.</div></div>`;
+
+  const names = id => escapeHtml((f.playerNames||{})[id] || id);
+  const d = new Date(f.createdAt);
+  const dateStr = d.toLocaleDateString([], {day:'2-digit',month:'short',year:'numeric'}) + ' · ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  const teamAScore = (f.teamScores||{}).A ?? 0;
+  const teamBScore = (f.teamScores||{}).B ?? 0;
+  const winner = f.winnerTeam === 'A' ? 'Team A' : (f.winnerTeam === 'B' ? 'Team B' : 'Draw');
+
+  const perPlayer = (f.playerIds||[]).map(id => `
+    <div class="stat-line">
+      <span>${names(id)}</span>
+      <span class="tabular">${(f.finalScores||{})[id]||0} pts · break ${(f.highestBreaks||{})[id]||0}</span>
+    </div>
+    <div class="stat-line" style="font-size:.78rem;opacity:.7;border-bottom:none;margin-top:-4px">
+      <span>Fouls given ${(f.foulPointsGiven||{})[id]||0}</span>
+      <span>Fouls received ${(f.foulPointsReceived||{})[id]||0}</span>
+    </div>`).join('');
+
+  const events = (f.events||[]);
+  const logHtml = events.map(e => {
+    let text = '';
+    if (e.type === 'BALL') text = `${e.playerName} potted ${(e.ball||'').charAt(0)+(e.ball||'').slice(1).toLowerCase()} (+${e.points})`;
+    else if (e.type === 'FOUL') text = `${e.playerName} FOUL — ${e.foulReceiverName} +${e.points}`;
+    else if (e.type === 'SWITCH_TURN') text = `▶ ${e.playerName} on strike`;
+    const t = new Date(e.timestamp);
+    const time = t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    return `<div class="log-entry" style="color:var(--ink)"><span class="log-time">${time}</span>${text}</div>`;
+  }).join('') || `<div class="empty">No event log saved for this frame.</div>`;
+
+  return `
+    <div class="topbar">
+      <button class="icon-btn" onclick="go('history')">← Back</button>
+      <h1>Frame Detail</h1>
+    </div>
+    <div class="content stack">
+      <div class="card">
+        <div style="font-size:.8rem;opacity:.65">${dateStr} · ${f.mode==='ONE_V_ONE'?'1v1':'2v2'}</div>
+        <h3 style="margin-top:6px;text-transform:none">Team A ${teamAScore} — ${teamBScore} Team B</h3>
+        <div style="font-weight:600">Winner: ${winner}</div>
+      </div>
+      <div class="card">
+        <h3 style="text-transform:none;margin-bottom:8px">Per player</h3>
+        ${perPlayer}
+      </div>
+      <div class="section-label" style="color:var(--ink)">Full action log</div>
+      <div class="card" style="max-height:260px;overflow-y:auto">${logHtml}</div>
+      <button class="btn danger" onclick="requestDeleteFrame('${f.id}')">Delete This Frame</button>
+    </div>
+    ${state.confirmDeleteId ? renderDeleteConfirm() : ''}
+  `;
 }
 
 /* ---------- utils ---------- */
