@@ -312,6 +312,7 @@ const state = {
   saving: false,
   saveError: null,
   decidedByBlackBall: false,
+  summarySaved: false,
 
   // stats
   summaries: [],
@@ -353,12 +354,42 @@ function render(){
 }
 
 function go(screen){
+  applyScreen(screen);
+  try{ history.pushState({ screen }, '', '#'+screen); } catch(e){}
+}
+
+/* Actually switches the visible screen + handles wake-lock side effects.
+   Used both by go() (forward navigation) and the popstate handler (back/forward). */
+function applyScreen(screen){
   const leavingScoring = state.screen === 'scoring' && screen !== 'scoring';
   state.screen = screen;
   render();
   if (screen === 'scoring') requestWakeLock();
   else if (leavingScoring) releaseWakeLock();
 }
+
+/* ---------- Back button / browser navigation (History API) ----------
+   Every go() call pushes a history entry, so the Android hardware/gesture
+   back button (and the browser's own Back) moves through the app's own
+   screens instead of closing the tab. Only when there's no more app
+   history left does Back fall through to actually leaving the page. */
+window.addEventListener('popstate', (event) => {
+  const targetScreen = (event.state && event.state.screen) || 'home';
+
+  // Guard against silently losing an in-progress, unsaved frame.
+  if (state.screen === 'scoring' && state.events.length > 0 && targetScreen !== 'scoring'){
+    const leave = confirm('Leave this frame? Any unsaved scoring progress will be lost.');
+    if (!leave){
+      // Put the scoring screen back on top of the history stack to cancel the back navigation.
+      try{ history.pushState({ screen:'scoring' }, '', '#scoring'); } catch(e){}
+      return;
+    }
+  }
+  applyScreen(targetScreen);
+});
+
+// Establish a base history entry for the home screen on first load.
+try{ history.replaceState({ screen:'home' }, '', '#home'); } catch(e){}
 
 /* ---------- Screen Wake Lock (keep display on during a live frame) ---------- */
 let wakeLockSentinel = null;
@@ -464,9 +495,15 @@ function renderRoster(){
 async function ensurePlayersLoaded(){
   if (state.players.length === 0) await loadRoster();
 }
+// Team A / Team B max size depends on mode. ONE_V_TWO is Team A (1 player) vs Team B (2 players).
+function teamMax(mode, team){
+  if (mode === 'TWO_V_TWO') return 2;
+  if (mode === 'ONE_V_TWO') return team === 'A' ? 1 : 2;
+  return 1; // ONE_V_ONE
+}
 function setMode(mode){ state.mode = mode; state.teamA = []; state.teamB = []; render(); }
 function toggleTeam(team, id){
-  const maxPer = state.mode === 'ONE_V_ONE' ? 1 : 2;
+  const maxPer = teamMax(state.mode, team);
   const other = team === 'A' ? state.teamB : state.teamA;
   const list = team === 'A' ? state.teamA : state.teamB;
   if (list.includes(id)){
@@ -476,9 +513,11 @@ function toggleTeam(team, id){
   }
   render();
 }
-function startFrame(){
-  const maxPer = state.mode === 'ONE_V_ONE' ? 1 : 2;
-  if (state.teamA.length !== maxPer || state.teamB.length !== maxPer) return;
+
+/* Shared setup that actually resets scoring state and enters the Scoring
+   screen — used both for a fresh frame from Match Setup and for "Start New
+   Frame" rematches straight from the Frame Summary. */
+function beginFrame(){
   state.participantIds = [...state.teamA, ...state.teamB];
   state.playerNames = {};
   state.players.forEach(p => { if (state.participantIds.includes(p.id)) state.playerNames[p.id] = p.name; });
@@ -486,16 +525,39 @@ function startFrame(){
   state.currentStrikerId = state.teamA[0];
   state.currentOpponentReceiverId = state.teamB[0];
   state.showSummary = false;
+  state.summarySaved = false;
   state.saveError = null;
   state.decidedByBlackBall = false;
   go('scoring');
 }
+function startFrame(){
+  const aMax = teamMax(state.mode, 'A'), bMax = teamMax(state.mode, 'B');
+  if (state.teamA.length !== aMax || state.teamB.length !== bMax) return;
+  beginFrame();
+}
+
+/* Called from the "Start New Frame" button after a frame is saved.
+   1v1: replay with the exact same two players, straight back into scoring.
+   1v2 / 2v2: keep the mode, but clear team picks — teams often get
+   reshuffled between frames — and go back to Match Setup to repick. */
+function rematch(){
+  state.showSummary = false;
+  state.summarySaved = false;
+  if (state.mode === 'ONE_V_ONE'){
+    beginFrame();
+  } else {
+    state.teamA = [];
+    state.teamB = [];
+    go('setup');
+  }
+}
+
 function renderSetup(){
   if (state.players.length === 0 && !state.loadingPlayers) ensurePlayersLoaded();
-  const maxPer = state.mode === 'ONE_V_ONE' ? 1 : 2;
-  const teamCol = (team, ids) => `
+  const aMax = teamMax(state.mode, 'A'), bMax = teamMax(state.mode, 'B');
+  const teamCol = (team, ids, max) => `
     <div style="flex:1">
-      <div class="section-label" style="color:var(--ink)">Team ${team}</div>
+      <div class="section-label" style="color:var(--ink)">Team ${team} <span style="opacity:.6">(pick ${max})</span></div>
       ${state.players.map(p => `
         <label class="checkline">
           <input type="checkbox" ${ids.includes(p.id)?'checked':''}
@@ -503,24 +565,26 @@ function renderSetup(){
           <span>${escapeHtml(p.name)}</span>
         </label>`).join('')}
     </div>`;
-  const ready = state.teamA.length === maxPer && state.teamB.length === maxPer;
+  const ready = state.teamA.length === aMax && state.teamB.length === bMax;
+  const modeLabel = { ONE_V_ONE:'1v1', ONE_V_TWO:'1v2', TWO_V_TWO:'2v2' }[state.mode];
   return `
     <div class="topbar">
       <button class="icon-btn" onclick="go('home')">← Back</button>
       <h1>New Frame</h1>
     </div>
     <div class="content stack">
-      <div class="row">
+      <div class="row wrap">
         <span class="chip ${state.mode==='ONE_V_ONE'?'active':''}" onclick="setMode('ONE_V_ONE')">1 vs 1</span>
+        <span class="chip ${state.mode==='ONE_V_TWO'?'active':''}" onclick="setMode('ONE_V_TWO')">1 vs 2</span>
         <span class="chip ${state.mode==='TWO_V_TWO'?'active':''}" onclick="setMode('TWO_V_TWO')">2 vs 2</span>
       </div>
       ${state.players.length === 0 ? `<div class="empty">Add players to your roster first.</div>` : ''}
       <div class="row card">
-        ${teamCol('A', state.teamA)}
-        ${teamCol('B', state.teamB)}
+        ${teamCol('A', state.teamA, aMax)}
+        ${teamCol('B', state.teamB, bMax)}
       </div>
       <button class="btn" ${ready?'':'disabled'} onclick="startFrame()">
-        ${state.mode==='ONE_V_ONE' ? 'Start 1v1 Frame' : 'Start 2v2 Frame'}
+        Start ${modeLabel} Frame
       </button>
     </div>`;
 }
@@ -608,10 +672,17 @@ async function confirmSaveFrame(){
     };
     await db.collection('frames').add(frame);
     state.saving = false;
-    go('home');
+    state.summarySaved = true;
+    render();
   } catch(e){
     state.saveError = e.message; state.saving = false; render();
   }
+}
+
+function finishSummaryDone(){
+  state.showSummary = false;
+  state.summarySaved = false;
+  go('home');
 }
 
 function renderScoring(){
@@ -631,7 +702,7 @@ function renderScoring(){
 
   const foulButtons = [4,5,6,7].map(v => `<button class="foul-btn" onclick="recordFoul(${v})">Foul ${v}</button>`).join('');
 
-  const receiverChips = state.mode === 'TWO_V_TWO' ? `
+  const receiverChips = opposingTeam(state.currentStrikerId).length > 1 ? `
     <div class="section-label">Receiving opponent (gets the foul points)</div>
     <div class="row wrap">
       ${opposingTeam(state.currentStrikerId).map(id => `
@@ -654,7 +725,7 @@ function renderScoring(){
   return `
     <div class="topbar">
       <button class="icon-btn" onclick="go('setup')">← Back</button>
-      <h1>${state.mode==='ONE_V_ONE'?'1v1 Frame':'2v2 Frame'}</h1>
+      <h1>${({ONE_V_ONE:'1v1 Frame',ONE_V_TWO:'1v2 Frame',TWO_V_TWO:'2v2 Frame'})[state.mode]}</h1>
       <button class="icon-btn" onclick="undoLast()">↺ Undo</button>
     </div>
     <div class="content">
@@ -699,6 +770,26 @@ function renderSummaryModal(fs){
     </div>
   `).join('');
 
+  // ---- Already saved: offer a rematch instead of the score-entry controls ----
+  if (state.summarySaved){
+    const rematchLabel = state.mode === 'ONE_V_ONE'
+      ? 'Start New Frame (same players)'
+      : 'Start New Frame (pick players)';
+    return `
+      <div class="modal-backdrop" onclick="if(event.target===this) finishSummaryDone()">
+        <div class="modal">
+          <h2>Frame Saved ✓</h2>
+          <p style="font-weight:600;margin:8px 0 0">${winnerText}</p>
+          <p class="tabular" style="font-size:1.1rem;margin:6px 0 16px">Team A: ${teamAScore} — Team B: ${teamBScore}</p>
+          ${perPlayer}
+          <div class="row" style="margin-top:18px">
+            <button class="btn secondary" onclick="finishSummaryDone()">Done</button>
+            <button class="btn" onclick="rematch()">${rematchLabel}</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
   const blackBallSection = isDraw ? `
     <div class="card" style="margin-top:14px;border-color:var(--brown)">
       <h3 style="text-transform:none;font-size:1.05rem">Black Ball Game</h3>
@@ -721,7 +812,7 @@ function renderSummaryModal(fs){
       <div class="foul-row">
         ${[4,5,6,7].map(v => `<button class="foul-btn" onclick="recordBlackBallDeciderFoul(${v})">Foul ${v}</button>`).join('')}
       </div>
-      ${state.mode === 'TWO_V_TWO' ? `
+      ${opposingTeam(state.currentStrikerId).length > 1 ? `
         <div class="section-label" style="color:var(--ink)">Receiving opponent</div>
         <div class="row wrap">
           ${opposingTeam(state.currentStrikerId).map(id => `
@@ -953,7 +1044,7 @@ function renderHistory(){
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
           <div style="cursor:pointer;flex:1" onclick="openFrameDetail('${f.id}')">
-            <div style="font-size:.75rem;opacity:.6">${dateStr} · ${f.mode==='ONE_V_ONE'?'1v1':'2v2'}</div>
+            <div style="font-size:.75rem;opacity:.6">${dateStr} · ${({ONE_V_ONE:'1v1',ONE_V_TWO:'1v2',TWO_V_TWO:'2v2'})[f.mode] || f.mode}</div>
             <div style="font-weight:600;margin-top:2px">${teamAName} <span class="tabular">${teamAScore}</span> — <span class="tabular">${teamBScore}</span> ${teamBName}</div>
             <div style="font-size:.8rem;opacity:.7;margin-top:2px">Winner: ${winner}</div>
           </div>
@@ -1029,7 +1120,7 @@ function renderFrameDetail(){
     </div>
     <div class="content stack">
       <div class="card">
-        <div style="font-size:.8rem;opacity:.65">${dateStr} · ${f.mode==='ONE_V_ONE'?'1v1':'2v2'}</div>
+        <div style="font-size:.8rem;opacity:.65">${dateStr} · ${({ONE_V_ONE:'1v1',ONE_V_TWO:'1v2',TWO_V_TWO:'2v2'})[f.mode] || f.mode}</div>
         <h3 style="margin-top:6px;text-transform:none">Team A ${teamAScore} — ${teamBScore} Team B</h3>
         <div style="font-weight:600">Winner: ${winner}</div>
       </div>
