@@ -197,7 +197,7 @@
   .empty{ text-align:center; padding:32px 12px; opacity:.65; font-size:.9rem; }
   .error-box{ background:#fdecea; color:var(--danger); padding:10px 14px; border-radius:10px; font-size:.85rem; }
 
-  canvas.chart{ width:100%; height:160px; display:block; background:#fff; border:1px solid var(--card-border); border-radius:12px; }
+  canvas.chart{ width:100%; height:180px; display:block; background:#fff; border:1px solid var(--card-border); border-radius:12px; }
 
   .config-warning{
     background:#fff3cd; border:1px solid #ffe69c; color:#664d03;
@@ -883,7 +883,7 @@ function renderStats(){
           <div class="stat-line"><span>Frames won</span><span>${s.framesWon}</span></div>
           <div class="stat-line"><span>Highest break</span><span>${s.highestBreak}</span></div>
           <div class="stat-line"><span>Best frame score</span><span>${s.bestFrameScore}</span></div>
-          <div class="stat-line"><span>Foul points given / received</span><span>${s.foulGiven} / ${s.foulReceived}</span></div>
+          <div class="stat-line"><span>Total foul points given / received</span><span>${s.foulGiven} / ${s.foulReceived}</span></div>
         </div>
       `).join('')}
     </div>`;
@@ -907,11 +907,14 @@ function renderPlayerDetail(){
   const frames = state.playerFrames;
   const scores = frames.map(f => (f.finalScores||{})[id] || 0);
   const breaks = frames.map(f => (f.highestBreaks||{})[id] || 0);
+  const foulsGivenSeries = frames.map(f => (f.foulPointsGiven||{})[id] || 0);
   const highestBreak = Math.max(0, ...breaks);
   const bestScore = Math.max(0, ...scores);
   const wins = frames.filter(f => (f.winnerPlayerIds||[]).includes(id)).length;
   const totalGiven = frames.reduce((s,f)=>s+((f.foulPointsGiven||{})[id]||0),0);
   const totalReceived = frames.reduce((s,f)=>s+((f.foulPointsReceived||{})[id]||0),0);
+  const mostFoulGivenInFrame = Math.max(0, ...foulsGivenSeries);
+  const mostFoulReceivedInFrame = Math.max(0, ...frames.map(f => (f.foulPointsReceived||{})[id] || 0));
 
   const history = frames.slice().reverse().map(f => {
     const won = (f.winnerPlayerIds||[]).includes(id);
@@ -936,13 +939,17 @@ function renderPlayerDetail(){
           <div class="stat-line"><span>Wins</span><span>${wins}</span></div>
           <div class="stat-line"><span>Highest break</span><span>${highestBreak}</span></div>
           <div class="stat-line"><span>Best frame score</span><span>${bestScore}</span></div>
-          <div class="stat-line"><span>Foul points given</span><span>${totalGiven}</span></div>
-          <div class="stat-line"><span>Foul points received</span><span>${totalReceived}</span></div>
+          <div class="stat-line"><span>Most foul points given in a single frame</span><span>${mostFoulGivenInFrame}</span></div>
+          <div class="stat-line"><span>Most foul points received in a single frame</span><span>${mostFoulReceivedInFrame}</span></div>
+          <div class="stat-line"><span>Total foul points given</span><span>${totalGiven}</span></div>
+          <div class="stat-line"><span>Total foul points received</span><span>${totalReceived}</span></div>
         </div>
         <div class="section-label" style="color:var(--ink)">Score progression</div>
         <canvas class="chart" id="scoreChart"></canvas>
         <div class="section-label" style="color:var(--ink)">Break progression</div>
         <canvas class="chart" id="breakChart"></canvas>
+        <div class="section-label" style="color:var(--ink)">Fouls given over time</div>
+        <canvas class="chart" id="foulsGivenChart"></canvas>
         <div class="section-label" style="color:var(--ink)">Frame history</div>
         <div class="card">${history}</div>
       ` : ''}
@@ -952,10 +959,13 @@ function attachCharts(){
   const id = state.selectedPlayerId;
   const scores = state.playerFrames.map(f => (f.finalScores||{})[id] || 0);
   const breaks = state.playerFrames.map(f => (f.highestBreaks||{})[id] || 0);
+  const foulsGiven = state.playerFrames.map(f => (f.foulPointsGiven||{})[id] || 0);
   const scoreCanvas = document.getElementById('scoreChart');
   const breakCanvas = document.getElementById('breakChart');
+  const foulsGivenCanvas = document.getElementById('foulsGivenChart');
   if (scoreCanvas) drawLineChart(scoreCanvas, scores, '#1F7A44');
   if (breakCanvas) drawLineChart(breakCanvas, breaks, '#8B5E34');
+  if (foulsGivenCanvas) drawLineChart(foulsGivenCanvas, foulsGiven, '#B3261E');
 }
 function drawLineChart(canvas, values, color){
   const dpr = window.devicePixelRatio || 1;
@@ -966,19 +976,31 @@ function drawLineChart(canvas, values, color){
   ctx.clearRect(0,0,rect.width,rect.height);
   if (values.length === 0) return;
 
-  const padX = 14, padY = 14;
-  const w = rect.width - padX*2, h = rect.height - padY*2;
+  // Extra top padding reserves room for the value label drawn above each point.
+  const padX = 16, padTop = 22, padBottom = 14;
+  const w = rect.width - padX*2, h = rect.height - padTop - padBottom;
   const maxV = Math.max(1, ...values), minV = Math.min(0, ...values);
   const range = Math.max(1, maxV - minV);
   const stepX = values.length > 1 ? w / (values.length-1) : 0;
-  const pt = i => [padX + stepX*i, padY + h - ((values[i]-minV)/range)*h];
+  const pt = i => [padX + stepX*i, padTop + h - ((values[i]-minV)/range)*h];
 
   ctx.strokeStyle = '#e6e0cc'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(padX, padY+h); ctx.lineTo(padX+w, padY+h); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(padX, padTop+h); ctx.lineTo(padX+w, padTop+h); ctx.stroke();
+
+  function drawLabels(){
+    ctx.font = '600 10px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#1B1B1B';
+    values.forEach((v,i) => {
+      const [x,y] = pt(i);
+      ctx.fillText(String(v), x, Math.max(10, y - 8));
+    });
+  }
 
   if (values.length === 1){
     const [x,y] = pt(0);
     ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x,y,4,0,7); ctx.fill();
+    drawLabels();
     return;
   }
   ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.lineJoin='round'; ctx.lineCap='round';
@@ -987,6 +1009,7 @@ function drawLineChart(canvas, values, color){
   ctx.stroke();
   ctx.fillStyle = color;
   values.forEach((v,i)=>{ const [x,y]=pt(i); ctx.beginPath(); ctx.arc(x,y,3.5,0,7); ctx.fill(); });
+  drawLabels();
 }
 
 /* ---------- Frame history (list, view, delete) ---------- */
