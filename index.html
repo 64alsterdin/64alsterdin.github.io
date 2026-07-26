@@ -27,6 +27,7 @@
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;height:100%;}
+  button,.btn,.ball-btn,.foul-btn,.icon-btn,.chip{ touch-action:manipulation; }
   body{
     font-family:'Inter',system-ui,sans-serif;
     background:var(--bg);
@@ -233,6 +234,17 @@ try {
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
     firebaseReady = true;
+    // Cache reads/writes locally so the app keeps working with no/weak signal
+    // (e.g. at the club) and automatically syncs everything once back online.
+    db.enablePersistence().catch((err) => {
+      if (err.code === 'failed-precondition') {
+        console.warn('Offline persistence unavailable: multiple tabs open.');
+      } else if (err.code === 'unimplemented') {
+        console.warn('Offline persistence not supported in this browser.');
+      } else {
+        console.warn('Offline persistence failed to enable:', err);
+      }
+    });
   }
 } catch (e) {
   console.error("Firebase init failed", e);
@@ -299,6 +311,7 @@ const state = {
   showSummary: false,
   saving: false,
   saveError: null,
+  decidedByBlackBall: false,
 
   // stats
   summaries: [],
@@ -339,7 +352,38 @@ function render(){
   }
 }
 
-function go(screen){ state.screen = screen; render(); }
+function go(screen){
+  const leavingScoring = state.screen === 'scoring' && screen !== 'scoring';
+  state.screen = screen;
+  render();
+  if (screen === 'scoring') requestWakeLock();
+  else if (leavingScoring) releaseWakeLock();
+}
+
+/* ---------- Screen Wake Lock (keep display on during a live frame) ---------- */
+let wakeLockSentinel = null;
+async function requestWakeLock(){
+  if (!('wakeLock' in navigator)) return;
+  try{
+    wakeLockSentinel = await navigator.wakeLock.request('screen');
+    wakeLockSentinel.addEventListener('release', () => { wakeLockSentinel = null; });
+  } catch(e){
+    console.warn('Wake lock request failed:', e);
+  }
+}
+async function releaseWakeLock(){
+  if (wakeLockSentinel){
+    try{ await wakeLockSentinel.release(); } catch(e){}
+    wakeLockSentinel = null;
+  }
+}
+// Wake locks are auto-released when the tab is backgrounded — reacquire it
+// automatically if the user comes back while still on the scoring screen.
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && state.screen === 'scoring' && !wakeLockSentinel){
+    await requestWakeLock();
+  }
+});
 
 /* ---------- Config warning (shown until firebaseConfig is filled in) ---------- */
 function renderConfigWarning(){
@@ -443,6 +487,7 @@ function startFrame(){
   state.currentOpponentReceiverId = state.teamB[0];
   state.showSummary = false;
   state.saveError = null;
+  state.decidedByBlackBall = false;
   go('scoring');
 }
 function renderSetup(){
@@ -509,6 +554,28 @@ function recordFoul(value){
   });
   render();
 }
+
+/* Black Ball Game: a re-spotted-black tiebreaker played when a frame ends level.
+   The frame is decided solely by this single ball — whoever pots it, or
+   whoever benefits from a foul during it, wins the frame outright. */
+function potBlackBallDecider(){
+  state.events.push({
+    type:'BALL', playerId: state.currentStrikerId, playerName: state.playerNames[state.currentStrikerId]||'',
+    ball:'BLACK', points:7, blackBallDecider:true, timestamp: Date.now()
+  });
+  state.decidedByBlackBall = true;
+  render();
+}
+function recordBlackBallDeciderFoul(value){
+  const receiver = state.currentOpponentReceiverId;
+  state.events.push({
+    type:'FOUL', playerId: state.currentStrikerId, playerName: state.playerNames[state.currentStrikerId]||'',
+    points: value, foulReceiverId: receiver, foulReceiverName: state.playerNames[receiver]||'',
+    blackBallDecider:true, timestamp: Date.now()
+  });
+  state.decidedByBlackBall = true;
+  render();
+}
 function undoLast(){ if (state.events.length) state.events.pop(); render(); }
 function requestFinish(){ state.showSummary = true; render(); }
 function dismissSummary(){ state.showSummary = false; render(); }
@@ -535,6 +602,8 @@ async function confirmSaveFrame(){
       foulPointsGiven: fs.foulGiven,
       foulPointsReceived: fs.foulReceived,
       winnerTeam, winnerPlayerIds,
+      isDraw: winnerTeam === '',
+      decidedByBlackBall: !!state.decidedByBlackBall,
       createdAt: Date.now()
     };
     await db.collection('frames').add(frame);
@@ -576,6 +645,7 @@ function renderScoring(){
     if (e.type === 'BALL') text = `${e.playerName} potted ${e.ball[0]+e.ball.slice(1).toLowerCase()} (+${e.points})`;
     else if (e.type === 'FOUL') text = `${e.playerName} FOUL — ${e.foulReceiverName} +${e.points}`;
     else if (e.type === 'SWITCH_TURN') text = `▶ ${e.playerName} on strike`;
+    if (e.blackBallDecider) text += ' 🎱 Black Ball Game';
     const t = new Date(e.timestamp);
     const time = t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
     return `<div class="log-entry"><span class="log-time">${time}</span>${text}</div>`;
@@ -613,7 +683,11 @@ function renderScoring(){
 function renderSummaryModal(fs){
   const teamAScore = state.teamA.reduce((s,id)=>s+(fs.scores[id]||0),0);
   const teamBScore = state.teamB.reduce((s,id)=>s+(fs.scores[id]||0),0);
-  const winnerText = teamAScore > teamBScore ? 'Team A wins' : (teamBScore > teamAScore ? 'Team B wins' : 'Frame drawn');
+  const isDraw = teamAScore === teamBScore;
+  const winnerText = isDraw
+    ? 'Draw'
+    : (teamAScore > teamBScore ? 'Team A wins' : 'Team B wins') + (state.decidedByBlackBall ? ' (Black Ball Game)' : '');
+
   const perPlayer = state.participantIds.map(id => `
     <div class="stat-line">
       <span>${escapeHtml(state.playerNames[id]||'')}</span>
@@ -625,6 +699,39 @@ function renderSummaryModal(fs){
     </div>
   `).join('');
 
+  const blackBallSection = isDraw ? `
+    <div class="card" style="margin-top:14px;border-color:var(--brown)">
+      <h3 style="text-transform:none;font-size:1.05rem">Black Ball Game</h3>
+      <p style="font-size:.85rem;margin:6px 0 12px">
+        Scores are level. Re-spot the black — the frame is decided the moment
+        someone pots it, or the moment either side fouls.
+      </p>
+      <div class="section-label" style="color:var(--ink)">On strike</div>
+      <div class="row wrap">
+        ${state.participantIds.map(id => `
+          <span class="chip ${state.currentStrikerId===id?'active':''}" onclick="selectStriker('${id}')">
+            ${escapeHtml(state.playerNames[id]||'')}
+          </span>`).join('')}
+      </div>
+      <div style="text-align:center;margin:14px 0 6px">
+        <button class="ball-btn" style="background:#212121;color:#fff;width:64px;height:64px;font-size:1.1rem" onclick="potBlackBallDecider()">7</button>
+        <div class="ball-label">Pot Black</div>
+      </div>
+      <div class="section-label" style="color:var(--ink)">Foul by ${escapeHtml(state.playerNames[state.currentStrikerId]||'')} → point(s) to ${escapeHtml(state.playerNames[state.currentOpponentReceiverId]||'')}</div>
+      <div class="foul-row">
+        ${[4,5,6,7].map(v => `<button class="foul-btn" onclick="recordBlackBallDeciderFoul(${v})">Foul ${v}</button>`).join('')}
+      </div>
+      ${state.mode === 'TWO_V_TWO' ? `
+        <div class="section-label" style="color:var(--ink)">Receiving opponent</div>
+        <div class="row wrap">
+          ${opposingTeam(state.currentStrikerId).map(id => `
+            <span class="chip ${state.currentOpponentReceiverId===id?'active':''}" onclick="selectReceiver('${id}')">
+              ${escapeHtml(state.playerNames[id]||'')}
+            </span>`).join('')}
+        </div>` : ''}
+    </div>
+  ` : '';
+
   return `
     <div class="modal-backdrop" onclick="if(event.target===this && !${state.saving}) dismissSummary()">
       <div class="modal">
@@ -632,10 +739,13 @@ function renderSummaryModal(fs){
         <p style="font-weight:600;margin:8px 0 0">${winnerText}</p>
         <p class="tabular" style="font-size:1.1rem;margin:6px 0 16px">Team A: ${teamAScore} — Team B: ${teamBScore}</p>
         ${perPlayer}
+        ${blackBallSection}
         ${state.saveError ? `<div class="error-box" style="margin-top:12px">${state.saveError}</div>` : ''}
         <div class="row" style="margin-top:18px">
           <button class="btn secondary" ${state.saving?'disabled':''} onclick="dismissSummary()">Keep Playing</button>
-          <button class="btn" ${state.saving?'disabled':''} onclick="confirmSaveFrame()">${state.saving?'Saving…':'Save to Firebase'}</button>
+          <button class="btn" ${state.saving?'disabled':''} onclick="confirmSaveFrame()">
+            ${state.saving ? 'Saving…' : (isDraw ? 'Save as Draw' : 'Save to Firebase')}
+          </button>
         </div>
       </div>
     </div>`;
@@ -838,7 +948,7 @@ function renderHistory(){
     const names = id => escapeHtml((f.playerNames||{})[id] || id);
     const teamAName = (f.teamA||[]).map(names).join(' & ');
     const teamBName = (f.teamB||[]).map(names).join(' & ');
-    const winner = f.winnerTeam === 'A' ? teamAName : (f.winnerTeam === 'B' ? teamBName : 'Draw');
+    const winner = (f.winnerTeam === 'A' ? teamAName : (f.winnerTeam === 'B' ? teamBName : 'Draw')) + (f.decidedByBlackBall ? ' 🎱' : '');
     return `
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
@@ -888,7 +998,7 @@ function renderFrameDetail(){
   const dateStr = d.toLocaleDateString([], {day:'2-digit',month:'short',year:'numeric'}) + ' · ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
   const teamAScore = (f.teamScores||{}).A ?? 0;
   const teamBScore = (f.teamScores||{}).B ?? 0;
-  const winner = f.winnerTeam === 'A' ? 'Team A' : (f.winnerTeam === 'B' ? 'Team B' : 'Draw');
+  const winner = (f.winnerTeam === 'A' ? 'Team A' : (f.winnerTeam === 'B' ? 'Team B' : 'Draw')) + (f.decidedByBlackBall ? ' (Black Ball Game)' : '');
 
   const perPlayer = (f.playerIds||[]).map(id => `
     <div class="stat-line">
@@ -906,6 +1016,7 @@ function renderFrameDetail(){
     if (e.type === 'BALL') text = `${e.playerName} potted ${(e.ball||'').charAt(0)+(e.ball||'').slice(1).toLowerCase()} (+${e.points})`;
     else if (e.type === 'FOUL') text = `${e.playerName} FOUL — ${e.foulReceiverName} +${e.points}`;
     else if (e.type === 'SWITCH_TURN') text = `▶ ${e.playerName} on strike`;
+    if (e.blackBallDecider) text += ' 🎱 Black Ball Game';
     const t = new Date(e.timestamp);
     const time = t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
     return `<div class="log-entry" style="color:var(--ink)"><span class="log-time">${time}</span>${text}</div>`;
