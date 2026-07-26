@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" id="html-root">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
@@ -27,7 +27,7 @@
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;height:100%;}
-  button,.btn,.ball-btn,.foul-btn,.icon-btn,.chip{ touch-action:manipulation; }
+  button,.btn,.ball-btn,.foul-btn,.icon-btn,.chip,.metric-card{ touch-action:manipulation; }
   body{
     font-family:'Inter',system-ui,sans-serif;
     background:var(--bg);
@@ -42,6 +42,11 @@
   }
   .tabular{ font-variant-numeric:tabular-nums; }
   #app{ min-height:100vh; display:flex; flex-direction:column; background:var(--bg); }
+
+  /* RTL Support overrides */
+  [dir="rtl"] { text-align: right; }
+  [dir="rtl"] .topbar { flex-direction: row-reverse; }
+  [dir="rtl"] .log-time { margin-right: 0; margin-left: 6px; }
 
   .topbar{
     background:var(--felt);
@@ -98,6 +103,13 @@
     box-shadow:0 1px 3px rgba(0,0,0,.06);
   }
 
+  .metric-card{
+    background:#FFFFFF; border-radius:12px; padding:12px 14px;
+    border:1.5px solid var(--card-border);
+    cursor:pointer; transition:border-color .15s, background-color .15s;
+  }
+  .metric-card:active{ border-color:var(--felt); background:#f4fbf6; }
+
   input[type=text]{
     width:100%; padding:12px 14px; border-radius:10px;
     border:1.5px solid var(--card-border); font-size:1rem; font-family:'Inter',sans-serif;
@@ -118,10 +130,7 @@
   }
   .chip.active{ background:var(--felt); color:#FFFFFF; border-color:var(--felt); }
 
-  .checkline{ display:flex; align-items:center; gap:10px; padding:8px 2px; }
-  .checkline input{ width:20px; height:20px; }
-
-  /* --- Scoring screen: the felt table --- */
+  /* Felt table */
   .table-surface{
     background:radial-gradient(120% 140% at 50% -10%, var(--felt-light) 0%, var(--felt) 45%, var(--felt-dark) 100%);
     border-radius:18px;
@@ -168,6 +177,12 @@
   }
   .foul-btn:active{ background:#7a1a15; }
 
+  .toast-warning{
+    background:#fff3cd; color:#664d03; border:1px solid #ffe69c;
+    padding:10px 14px; border-radius:10px; font-size:.85rem; margin-top:10px;
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+  }
+
   .log{
     background:rgba(0,0,0,.28); border-radius:12px; padding:10px; margin-top:14px;
     max-height:180px; overflow-y:auto; font-size:.8rem;
@@ -176,7 +191,7 @@
   .log-entry:last-child{ border-bottom:none; }
   .log-time{ opacity:.55; margin-right:6px; }
 
-  /* --- Modal --- */
+  /* Modal */
   .modal-backdrop{
     position:fixed; inset:0; background:rgba(0,0,0,.55);
     display:flex; align-items:flex-end; justify-content:center; z-index:50;
@@ -210,13 +225,7 @@
 <div id="app"></div>
 
 <script>
-/* ============================================================
-   FIREBASE CONFIG — REQUIRED
-   Paste the config object from:
-   Firebase console → Project settings → General →
-   "Your apps" → Android/Web app → SDK setup and configuration
-   (the same Firebase project you used for the Android app / rules).
-   ============================================================ */
+/* Firebase Configuration */
 const firebaseConfig = {
   apiKey: "AIzaSyBJtaa0D1hjvLxdfFwdLvj2_1DIA-lCfzs",
   authDomain: "snookertracker-bd764.firebaseapp.com",
@@ -234,25 +243,118 @@ try {
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
     firebaseReady = true;
-    // Cache reads/writes locally so the app keeps working with no/weak signal
-    // (e.g. at the club) and automatically syncs everything once back online.
     db.enablePersistence().catch((err) => {
-      if (err.code === 'failed-precondition') {
-        console.warn('Offline persistence unavailable: multiple tabs open.');
-      } else if (err.code === 'unimplemented') {
-        console.warn('Offline persistence not supported in this browser.');
-      } else {
-        console.warn('Offline persistence failed to enable:', err);
-      }
+      console.warn('Offline persistence info:', err.code);
     });
   }
 } catch (e) {
   console.error("Firebase init failed", e);
 }
 
-/* ============================================================
-   DATA MODEL (mirrors the Android app so both can share one DB)
-   ============================================================ */
+/* Internationalization Dictionary (EN / HE) */
+const i18n = {
+  en: {
+    title: "Snooker Tracker",
+    startNewFrame: "▶ Start New Frame",
+    manageRoster: "Manage Player Roster",
+    playerStats: "Player Statistics",
+    frameHistory: "Frame History",
+    back: "← Back",
+    backRtl: "Back →",
+    undo: "↺ Undo",
+    finishFrame: "Finish Frame",
+    mode1v1: "1v1 Single Match",
+    mode1v2: "1v2 Handicap Match",
+    mode2v2: "2v2 Doubles Match",
+    teamA: "Team A",
+    teamB: "Team B",
+    redsInFrame: "Reds in Frame",
+    beginScoring: "Begin Scoring →",
+    beginScoringRtl: "← Begin Scoring",
+    addPlayer: "Add Player",
+    playerNamePlaceholder: "Player name...",
+    onStrike: "On strike",
+    foulBy: "Foul by",
+    pointsTo: "points to",
+    receivingOpponent: "Receiving opponent",
+    noActionsYet: "No actions yet. Tap a ball to begin.",
+    invalidSequenceWarning: "Sequence error: expected a color ball next.",
+    maxRedsExceeded: "Max reds exceeded for this frame!",
+    colorOrderWarning: "Sequence error: colors must be potted in order (Yellow → Black).",
+    dismiss: "Dismiss",
+    frameSummary: "Frame Summary",
+    drawGame: "Game Draw / Tie!",
+    blackBallDeciderNotice: "Scores are level! Play the Black Ball Game to determine the frame winner.",
+    blackBallGameHeader: "Black Ball Game",
+    potBlack: "Pot Black",
+    winner: "Winner",
+    saveAndFinish: "Save & Finish Frame",
+    rematch: "Start New Frame",
+    totalFoulsGivenReceived: "Total foul points given / received",
+    mostFoulsGivenInFrame: "Most Foul Points Given (Single Frame)",
+    mostFoulsReceivedInFrame: "Most Foul Points Received (Single Frame)",
+    highestBreak: "Highest Break",
+    bestFrameScore: "Best Frame Score",
+    scoreProgression: "Score Progression Over Time",
+    breakProgression: "Highest Break Over Time",
+    foulsReceivedProgression: "Fouls Received Over Time",
+    deleteFrame: "Delete This Frame",
+    fullActionLog: "Full action log",
+    perPlayer: "Per player",
+    confirmDelete: "Confirm Delete",
+  },
+  he: {
+    title: "מעקב סנוקר",
+    startNewFrame: "▶ התחל פריים חדש",
+    manageRoster: "ניהול שחקנים",
+    playerStats: "סטטיסטיקת שחקנים",
+    frameHistory: "היסטוריית פריימים",
+    back: "← חזור",
+    backRtl: "חזור →",
+    undo: "↺ ביטול",
+    finishFrame: "סים פריים",
+    mode1v1: "משחק 1 נגד 1",
+    mode1v2: "משחק 1 נגד 2",
+    mode2v2: "משחק זוגות 2 נגד 2",
+    teamA: "קבוצה א'",
+    teamB: "קבוצה ב'",
+    redsInFrame: "כדורים אדומים בפריים",
+    beginScoring: "התחל ניקוד ←",
+    beginScoringRtl: "התחל ניקוד ←",
+    addPlayer: "הוסף שחקן",
+    playerNamePlaceholder: "שם השחקן...",
+    onStrike: "בתור (חובט)",
+    foulBy: "עבירה של",
+    pointsTo: "נקודות ל-",
+    receivingOpponent: "יריב מקבל הניקוד",
+    noActionsYet: "אין פעולות עדיין. לחץ על כדור להתחלה.",
+    invalidSequenceWarning: "שגיאת רצף: מצופה כדור צבעוני כעת.",
+    maxRedsExceeded: "הגעת למספר האדומים המרבי בפריים זה!",
+    colorOrderWarning: "שגיאת רצף: יש להכניס את הצבעוניים לפי הסדר (צהוב ← שחור).",
+    dismiss: "סגור",
+    frameSummary: "סיכום פריים",
+    drawGame: "תיקו בפריים!",
+    blackBallDeciderNotice: "תוצאה שווה! שחקו משחק כדור שחור לקביעת המנצח.",
+    blackBallGameHeader: "משחק כדור שחור",
+    potBlack: "הכנס שחור",
+    winner: "מנצח",
+    saveAndFinish: "שמור וסיים פריים",
+    rematch: "התחל פריים חדש",
+    totalFoulsGivenReceived: "סה\"כ נקודות עבירה שהוענקו / התקבלו",
+    mostFoulsGivenInFrame: "שיא נקודות עבירה לחובת השחקן (בפריים בודד)",
+    mostFoulsReceivedInFrame: "שיא נקודות עבירה לזכות השחקן (בפריים בודד)",
+    highestBreak: "ברייק שיא",
+    bestFrameScore: "תוצאת שיא בפריים",
+    scoreProgression: "התקדמות תוצאה לאורך זמן",
+    breakProgression: "התקדמות ברייקים לאורך זמן",
+    foulsReceivedProgression: "עבירות שהתקבלו לאורך זמן",
+    deleteFrame: "מחק פריים זה",
+    fullActionLog: "יומן פעולות מלא",
+    perPlayer: "לפי שחקן",
+    confirmDelete: "אישור מחיקה",
+  }
+};
+
 const BALL_COLORS = [
   { name:'RED', label:'Red', points:1, hex:'#D32F2F', text:'#fff' },
   { name:'YELLOW', label:'Yellow', points:2, hex:'#FBC02D', text:'#1B1B1B' },
@@ -262,6 +364,8 @@ const BALL_COLORS = [
   { name:'PINK', label:'Pink', points:6, hex:'#EC407A', text:'#fff' },
   { name:'BLACK', label:'Black', points:7, hex:'#212121', text:'#fff' },
 ];
+
+const COLOR_SEQUENCE = ['YELLOW', 'GREEN', 'BROWN', 'BLUE', 'PINK', 'BLACK'];
 
 function computeFrameState(participantIds, events){
   const scores = {}, highestBreaks = {}, foulGiven = {}, foulReceived = {};
@@ -288,10 +392,9 @@ function computeFrameState(participantIds, events){
   return { scores, highestBreaks, foulGiven, foulReceived };
 }
 
-/* ============================================================
-   APP STATE + ROUTER
-   ============================================================ */
+/* App State */
 const state = {
+  lang: localStorage.getItem('snooker_lang') || 'en',
   screen: 'home',
   players: [],
   loadingPlayers: false,
@@ -299,6 +402,7 @@ const state = {
 
   // match setup
   mode: 'ONE_V_ONE',
+  maxReds: 15,
   teamA: [],
   teamB: [],
 
@@ -313,6 +417,7 @@ const state = {
   saveError: null,
   decidedByBlackBall: false,
   summarySaved: false,
+  validationWarning: null,
 
   // stats
   summaries: [],
@@ -334,8 +439,21 @@ const state = {
   deleting: false,
 };
 
+function t(key) {
+  return (i18n[state.lang] && i18n[state.lang][key]) || i18n['en'][key] || key;
+}
+
+function toggleLang() {
+  state.lang = state.lang === 'en' ? 'he' : 'en';
+  localStorage.setItem('snooker_lang', state.lang);
+  document.getElementById('html-root').setAttribute('dir', state.lang === 'he' ? 'rtl' : 'ltr');
+  render();
+}
+
 function render(){
   const app = document.getElementById('app');
+  document.getElementById('html-root').setAttribute('dir', state.lang === 'he' ? 'rtl' : 'ltr');
+  
   if (!firebaseReady){
     app.innerHTML = renderConfigWarning();
     return;
@@ -358,8 +476,6 @@ function go(screen){
   try{ history.pushState({ screen }, '', '#'+screen); } catch(e){}
 }
 
-/* Actually switches the visible screen + handles wake-lock side effects.
-   Used both by go() (forward navigation) and the popstate handler (back/forward). */
 function applyScreen(screen){
   const leavingScoring = state.screen === 'scoring' && screen !== 'scoring';
   state.screen = screen;
@@ -368,39 +484,26 @@ function applyScreen(screen){
   else if (leavingScoring) releaseWakeLock();
 }
 
-/* ---------- Back button / browser navigation (History API) ----------
-   Every go() call pushes a history entry, so the Android hardware/gesture
-   back button (and the browser's own Back) moves through the app's own
-   screens instead of closing the tab. Only when there's no more app
-   history left does Back fall through to actually leaving the page. */
 window.addEventListener('popstate', (event) => {
   const targetScreen = (event.state && event.state.screen) || 'home';
-
-  // Guard against silently losing an in-progress, unsaved frame.
   if (state.screen === 'scoring' && state.events.length > 0 && targetScreen !== 'scoring'){
     const leave = confirm('Leave this frame? Any unsaved scoring progress will be lost.');
     if (!leave){
-      // Put the scoring screen back on top of the history stack to cancel the back navigation.
       try{ history.pushState({ screen:'scoring' }, '', '#scoring'); } catch(e){}
       return;
     }
   }
   applyScreen(targetScreen);
 });
-
-// Establish a base history entry for the home screen on first load.
 try{ history.replaceState({ screen:'home' }, '', '#home'); } catch(e){}
 
-/* ---------- Screen Wake Lock (keep display on during a live frame) ---------- */
 let wakeLockSentinel = null;
 async function requestWakeLock(){
   if (!('wakeLock' in navigator)) return;
   try{
     wakeLockSentinel = await navigator.wakeLock.request('screen');
     wakeLockSentinel.addEventListener('release', () => { wakeLockSentinel = null; });
-  } catch(e){
-    console.warn('Wake lock request failed:', e);
-  }
+  } catch(e){}
 }
 async function releaseWakeLock(){
   if (wakeLockSentinel){
@@ -408,43 +511,43 @@ async function releaseWakeLock(){
     wakeLockSentinel = null;
   }
 }
-// Wake locks are auto-released when the tab is backgrounded — reacquire it
-// automatically if the user comes back while still on the scoring screen.
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible' && state.screen === 'scoring' && !wakeLockSentinel){
     await requestWakeLock();
   }
 });
 
-/* ---------- Config warning (shown until firebaseConfig is filled in) ---------- */
+function renderLangButton(){
+  return `<button class="icon-btn" onclick="toggleLang()">${state.lang === 'en' ? 'Hebrew 🇮🇱' : 'English 🇬🇧'}</button>`;
+}
+
 function renderConfigWarning(){
   return `
-    <div class="topbar"><h1>Snooker Tracker</h1></div>
+    <div class="topbar"><h1>${t('title')}</h1>${renderLangButton()}</div>
     <div class="content">
       <div class="config-warning">
         <strong>Firebase isn't configured yet.</strong><br><br>
-        Open this file in a text editor and replace the <code>firebaseConfig</code>
-        object near the top of the &lt;script&gt; with the real config from your
-        Firebase project (Project settings → General → Your apps → SDK setup and
-        configuration). It's the same project you already created for the Android
-        app / Firestore rules, so all your players and frames will show up here too.
+        Open this file in a text editor and replace the <code>firebaseConfig</code> object.
       </div>
     </div>`;
 }
 
-/* ---------- Home ---------- */
+/* Home Screen */
 function renderHome(){
   return `
-    <div class="topbar"><h1>Snooker Tracker</h1></div>
+    <div class="topbar">
+      <h1>${t('title')}</h1>
+      ${renderLangButton()}
+    </div>
     <div class="content stack">
-      <button class="btn" onclick="go('setup')">▶ Start New Frame</button>
-      <button class="btn secondary" onclick="loadRoster();go('roster')">Manage Player Roster</button>
-      <button class="btn secondary" onclick="loadStats();go('stats')">Player Statistics</button>
-      <button class="btn secondary" onclick="loadFrameHistory();go('history')">Frame History</button>
+      <button class="btn" onclick="go('setup')">${t('startNewFrame')}</button>
+      <button class="btn secondary" onclick="loadRoster();go('roster')">${t('manageRoster')}</button>
+      <button class="btn secondary" onclick="loadStats();go('stats')">${t('playerStats')}</button>
+      <button class="btn secondary" onclick="loadFrameHistory();go('history')">${t('frameHistory')}</button>
     </div>`;
 }
 
-/* ---------- Roster ---------- */
+/* Roster */
 async function loadRoster(){
   state.loadingPlayers = true; state.playersError = null; render();
   try{
@@ -464,59 +567,61 @@ async function addPlayer(){
   } catch(e){ state.playersError = e.message; render(); }
 }
 async function deletePlayer(id){
-  try{ await db.collection('players').doc(id).delete(); await loadRoster(); }
-  catch(e){ state.playersError = e.message; render(); }
+  try{
+    await db.collection('players').doc(id).delete();
+    await loadRoster();
+  } catch(e){ state.playersError = e.message; render(); }
 }
 function renderRoster(){
+  const list = state.players.map(p => `
+    <div class="player-row">
+      <span style="font-weight:600">${escapeHtml(p.name)}</span>
+      <button class="btn small danger" onclick="deletePlayer('${p.id}')">✕</button>
+    </div>`).join('');
   return `
     <div class="topbar">
-      <button class="icon-btn" onclick="go('home')">← Back</button>
-      <h1>Player Roster</h1>
+      <button class="icon-btn" onclick="go('home')">${state.lang==='he'?t('backRtl'):t('back')}</button>
+      <h1>${t('manageRoster')}</h1>
+      ${renderLangButton()}
     </div>
     <div class="content stack">
-      <div class="row">
-        <input type="text" id="newPlayerName" placeholder="New player name">
-        <button class="btn small" style="width:auto" onclick="addPlayer()">Add</button>
+      <div class="card stack">
+        <input type="text" id="newPlayerName" placeholder="${t('playerNamePlaceholder')}">
+        <button class="btn" onclick="addPlayer()">${t('addPlayer')}</button>
       </div>
-      ${state.playersError ? `<div class="error-box">${state.playersError}</div>` : ''}
-      ${state.loadingPlayers ? `<div class="empty">Loading…</div>` : ''}
-      <div class="card">
-        ${state.players.length === 0 && !state.loadingPlayers ? `<div class="empty">No players yet — add your first one above.</div>` : ''}
-        ${state.players.map(p => `
-          <div class="player-row">
-            <span>${escapeHtml(p.name)}</span>
-            <button class="btn small danger" onclick="deletePlayer('${p.id}')">Delete</button>
-          </div>`).join('')}
-      </div>
+      ${state.playersError ? `<div class="error-box">${escapeHtml(state.playersError)}</div>`:''}
+      <div class="card">${state.loadingPlayers ? `<div class="empty">...</div>` : (list || `<div class="empty">No players yet.</div>`)}</div>
     </div>`;
 }
 
-/* ---------- Match setup ---------- */
-async function ensurePlayersLoaded(){
-  if (state.players.length === 0) await loadRoster();
-}
-// Team A / Team B max size depends on mode. ONE_V_TWO is Team A (1 player) vs Team B (2 players).
+/* Match Setup */
 function teamMax(mode, team){
-  if (mode === 'TWO_V_TWO') return 2;
+  if (mode === 'ONE_V_ONE') return 1;
   if (mode === 'ONE_V_TWO') return team === 'A' ? 1 : 2;
-  return 1; // ONE_V_ONE
+  return 2;
 }
-function setMode(mode){ state.mode = mode; state.teamA = []; state.teamB = []; render(); }
-function toggleTeam(team, id){
-  const maxPer = teamMax(state.mode, team);
-  const other = team === 'A' ? state.teamB : state.teamA;
+function setMode(m){
+  state.mode = m; state.teamA = []; state.teamB = []; render();
+}
+function setMaxReds(r){
+  state.maxReds = r; render();
+}
+function togglePlayerPick(id, team){
   const list = team === 'A' ? state.teamA : state.teamB;
+  const other = team === 'A' ? state.teamB : state.teamA;
+  const max = teamMax(state.mode, team);
   if (list.includes(id)){
     list.splice(list.indexOf(id), 1);
-  } else if (!other.includes(id) && list.length < maxPer){
+  } else if (!other.includes(id) && list.length < max){
     list.push(id);
   }
   render();
 }
-
-/* Shared setup that actually resets scoring state and enters the Scoring
-   screen — used both for a fresh frame from Match Setup and for "Start New
-   Frame" rematches straight from the Frame Summary. */
+async function ensurePlayersLoaded(){
+  if (state.players.length === 0 && !state.loadingPlayers){
+    await loadRoster();
+  }
+}
 function beginFrame(){
   state.participantIds = [...state.teamA, ...state.teamB];
   state.playerNames = {};
@@ -528,6 +633,7 @@ function beginFrame(){
   state.summarySaved = false;
   state.saveError = null;
   state.decidedByBlackBall = false;
+  state.validationWarning = null;
   go('scoring');
 }
 function startFrame(){
@@ -535,97 +641,132 @@ function startFrame(){
   if (state.teamA.length !== aMax || state.teamB.length !== bMax) return;
   beginFrame();
 }
-
-/* Called from the "Start New Frame" button after a frame is saved.
-   1v1: replay with the exact same two players, straight back into scoring.
-   1v2 / 2v2: keep the mode, but clear team picks — teams often get
-   reshuffled between frames — and go back to Match Setup to repick. */
-function rematch(){
-  state.showSummary = false;
-  state.summarySaved = false;
-  if (state.mode === 'ONE_V_ONE'){
-    beginFrame();
-  } else {
-    state.teamA = [];
-    state.teamB = [];
-    go('setup');
-  }
-}
-
 function renderSetup(){
   if (state.players.length === 0 && !state.loadingPlayers) ensurePlayersLoaded();
   const aMax = teamMax(state.mode, 'A'), bMax = teamMax(state.mode, 'B');
+  const canStart = state.teamA.length === aMax && state.teamB.length === bMax;
+
   const teamCol = (team, ids, max) => `
-    <div style="flex:1">
-      <div class="section-label" style="color:var(--ink)">Team ${team} <span style="opacity:.6">(pick ${max})</span></div>
-      ${state.players.map(p => `
-        <label class="checkline">
-          <input type="checkbox" ${ids.includes(p.id)?'checked':''}
-            onchange="toggleTeam('${team}','${p.id}')">
-          <span>${escapeHtml(p.name)}</span>
-        </label>`).join('')}
+    <div class="card stack" style="flex:1">
+      <h3>${team==='A'?t('teamA'):t('teamB')} (${ids.length}/${max})</h3>
+      ${state.players.map(p => {
+        const pickedThis = ids.includes(p.id);
+        const pickedOther = (team==='A'?state.teamB:state.teamA).includes(p.id);
+        return `<span class="chip ${pickedThis?'active':''}" style="${pickedOther?'opacity:.3;pointer-events:none':''}" onclick="togglePlayerPick('${p.id}','${team}')">${escapeHtml(p.name)}</span>`;
+      }).join('') || '<div class="empty">No players</div>'}
     </div>`;
-  const ready = state.teamA.length === aMax && state.teamB.length === bMax;
-  const modeLabel = { ONE_V_ONE:'1v1', ONE_V_TWO:'1v2', TWO_V_TWO:'2v2' }[state.mode];
+
   return `
     <div class="topbar">
-      <button class="icon-btn" onclick="go('home')">← Back</button>
-      <h1>New Frame</h1>
+      <button class="icon-btn" onclick="go('home')">${state.lang==='he'?t('backRtl'):t('back')}</button>
+      <h1>${t('startNewFrame')}</h1>
+      ${renderLangButton()}
     </div>
     <div class="content stack">
       <div class="row wrap">
-        <span class="chip ${state.mode==='ONE_V_ONE'?'active':''}" onclick="setMode('ONE_V_ONE')">1 vs 1</span>
-        <span class="chip ${state.mode==='ONE_V_TWO'?'active':''}" onclick="setMode('ONE_V_TWO')">1 vs 2</span>
-        <span class="chip ${state.mode==='TWO_V_TWO'?'active':''}" onclick="setMode('TWO_V_TWO')">2 vs 2</span>
+        <button class="chip ${state.mode==='ONE_V_ONE'?'active':''}" onclick="setMode('ONE_V_ONE')">${t('mode1v1')}</button>
+        <button class="chip ${state.mode==='ONE_V_TWO'?'active':''}" onclick="setMode('ONE_V_TWO')">${t('mode1v2')}</button>
+        <button class="chip ${state.mode==='TWO_V_TWO'?'active':''}" onclick="setMode('TWO_V_TWO')">${t('mode2v2')}</button>
       </div>
-      ${state.players.length === 0 ? `<div class="empty">Add players to your roster first.</div>` : ''}
-      <div class="row card">
-        ${teamCol('A', state.teamA, aMax)}
-        ${teamCol('B', state.teamB, bMax)}
+
+      <div class="card stack">
+        <div class="section-label">${t('redsInFrame')}</div>
+        <div class="row">
+          ${[6, 10, 15].map(r => `<button class="chip ${state.maxReds===r?'active':''}" onclick="setMaxReds(${r})">${r} Reds</button>`).join('')}
+        </div>
       </div>
-      <button class="btn" ${ready?'':'disabled'} onclick="startFrame()">
-        Start ${modeLabel} Frame
-      </button>
+
+      <div class="row wrap">${teamCol('A', state.teamA, aMax)}${teamCol('B', state.teamB, bMax)}</div>
+      <button class="btn" ${canStart?'':'disabled'} onclick="startFrame()">${state.lang==='he'?t('beginScoringRtl'):t('beginScoring')}</button>
     </div>`;
 }
 
-/* ---------- Scoring ---------- */
-function teamOf(id){ return state.teamA.includes(id) ? 'A' : 'B'; }
-function opposingTeam(id){ return state.teamA.includes(id) ? state.teamB : state.teamA; }
-
+/* Scoring Engine & Sequence Validation */
+function opposingTeam(playerId){
+  if (state.teamA.includes(playerId)) return state.teamB;
+  return state.teamA;
+}
 function selectStriker(id){
   if (id === state.currentStrikerId) return;
   state.currentStrikerId = id;
   const opposing = opposingTeam(id);
   if (!opposing.includes(state.currentOpponentReceiverId)) state.currentOpponentReceiverId = opposing[0];
   state.events.push({ type:'SWITCH_TURN', playerId:id, playerName: state.playerNames[id]||'', timestamp: Date.now() });
+  state.validationWarning = null;
   render();
 }
-function selectReceiver(id){ state.currentOpponentReceiverId = id; render(); }
+function selectReceiver(id){
+  state.currentOpponentReceiverId = id;
+  render();
+}
+
 function potBall(ballName){
   const ball = BALL_COLORS.find(b => b.name === ballName);
+  state.validationWarning = null;
+
+  // Count potted reds so far
+  const redsPotted = state.events.filter(e => e.type === 'BALL' && e.ball === 'RED').length;
+
+  if (ballName === 'RED') {
+    if (redsPotted >= state.maxReds) {
+      state.validationWarning = t('maxRedsExceeded');
+    }
+  } else {
+    // If reds are still on table or break is active
+    let lastEvent = null;
+    for (let i = state.events.length - 1; i >= 0; i--) {
+      if (state.events[i].type === 'BALL') { lastEvent = state.events[i]; break; }
+      if (state.events[i].type === 'SWITCH_TURN' || state.events[i].type === 'FOUL') break;
+    }
+    
+    // When clearing colors after all reds are potted:
+    if (redsPotted >= state.maxReds) {
+      const pottedColors = state.events.filter(e => e.type === 'BALL' && e.ball !== 'RED').map(e => e.ball);
+      const nextExpectedColor = COLOR_SEQUENCE.find(c => !pottedColors.includes(c));
+      if (nextExpectedColor && ballName !== nextExpectedColor) {
+        state.validationWarning = t('colorOrderWarning');
+      }
+    } else if (lastEvent && lastEvent.ball !== 'RED' && lastEvent.playerId === state.currentStrikerId) {
+      // Potting color after another color without a red in between
+      state.validationWarning = t('invalidSequenceWarning');
+    }
+  }
+
   state.events.push({
-    type:'BALL', playerId: state.currentStrikerId, playerName: state.playerNames[state.currentStrikerId]||'',
-    ball: ball.name, points: ball.points, timestamp: Date.now()
-  });
-  render();
-}
-function recordFoul(value){
-  const receiver = state.currentOpponentReceiverId;
-  state.events.push({
-    type:'FOUL', playerId: state.currentStrikerId, playerName: state.playerNames[state.currentStrikerId]||'',
-    points: value, foulReceiverId: receiver, foulReceiverName: state.playerNames[receiver]||'', timestamp: Date.now()
+    type:'BALL',
+    playerId: state.currentStrikerId,
+    playerName: state.playerNames[state.currentStrikerId]||'',
+    ball: ball.name,
+    points: ball.points,
+    timestamp: Date.now()
   });
   render();
 }
 
-/* Black Ball Game: a re-spotted-black tiebreaker played when a frame ends level.
-   The frame is decided solely by this single ball — whoever pots it, or
-   whoever benefits from a foul during it, wins the frame outright. */
+function recordFoul(value){
+  state.validationWarning = null;
+  const receiver = state.currentOpponentReceiverId;
+  state.events.push({
+    type:'FOUL',
+    playerId: state.currentStrikerId,
+    playerName: state.playerNames[state.currentStrikerId]||'',
+    points: value,
+    foulReceiverId: receiver,
+    foulReceiverName: state.playerNames[receiver]||'',
+    timestamp: Date.now()
+  });
+  render();
+}
+
 function potBlackBallDecider(){
   state.events.push({
-    type:'BALL', playerId: state.currentStrikerId, playerName: state.playerNames[state.currentStrikerId]||'',
-    ball:'BLACK', points:7, blackBallDecider:true, timestamp: Date.now()
+    type:'BALL',
+    playerId: state.currentStrikerId,
+    playerName: state.playerNames[state.currentStrikerId]||'',
+    ball:'BLACK',
+    points:7,
+    blackBallDecider:true,
+    timestamp: Date.now()
   });
   state.decidedByBlackBall = true;
   render();
@@ -633,83 +774,54 @@ function potBlackBallDecider(){
 function recordBlackBallDeciderFoul(value){
   const receiver = state.currentOpponentReceiverId;
   state.events.push({
-    type:'FOUL', playerId: state.currentStrikerId, playerName: state.playerNames[state.currentStrikerId]||'',
-    points: value, foulReceiverId: receiver, foulReceiverName: state.playerNames[receiver]||'',
-    blackBallDecider:true, timestamp: Date.now()
+    type:'FOUL',
+    playerId: state.currentStrikerId,
+    playerName: state.playerNames[state.currentStrikerId]||'',
+    points: value,
+    foulReceiverId: receiver,
+    foulReceiverName: state.playerNames[receiver]||'',
+    blackBallDecider:true,
+    timestamp: Date.now()
   });
   state.decidedByBlackBall = true;
   render();
 }
-function undoLast(){ if (state.events.length) state.events.pop(); render(); }
-function requestFinish(){ state.showSummary = true; render(); }
-function dismissSummary(){ state.showSummary = false; render(); }
 
-async function confirmSaveFrame(){
-  state.saving = true; state.saveError = null; render();
-  try{
-    const fs = computeFrameState(state.participantIds, state.events);
-    const teamAScore = state.teamA.reduce((s,id)=>s+(fs.scores[id]||0),0);
-    const teamBScore = state.teamB.reduce((s,id)=>s+(fs.scores[id]||0),0);
-    const winnerTeam = teamAScore > teamBScore ? 'A' : (teamBScore > teamAScore ? 'B' : '');
-    const winnerPlayerIds = winnerTeam === 'A' ? state.teamA : (winnerTeam === 'B' ? state.teamB : []);
-    const frame = {
-      matchId: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
-      mode: state.mode,
-      playerIds: state.participantIds,
-      playerNames: state.playerNames,
-      teamA: state.teamA,
-      teamB: state.teamB,
-      events: state.events,
-      finalScores: fs.scores,
-      teamScores: { A: teamAScore, B: teamBScore },
-      highestBreaks: fs.highestBreaks,
-      foulPointsGiven: fs.foulGiven,
-      foulPointsReceived: fs.foulReceived,
-      winnerTeam, winnerPlayerIds,
-      isDraw: winnerTeam === '',
-      decidedByBlackBall: !!state.decidedByBlackBall,
-      createdAt: Date.now()
-    };
-    await db.collection('frames').add(frame);
-    state.saving = false;
-    state.summarySaved = true;
-    render();
-  } catch(e){
-    state.saveError = e.message; state.saving = false; render();
-  }
+function undoLast(){
+  if (state.events.length) state.events.pop();
+  state.validationWarning = null;
+  render();
 }
-
-function finishSummaryDone(){
+function requestFinish(){
+  state.showSummary = true;
+  render();
+}
+function dismissSummary(){
   state.showSummary = false;
-  state.summarySaved = false;
-  go('home');
+  render();
 }
 
 function renderScoring(){
-  const fs = computeFrameState(state.participantIds, state.events);
-  const scorecards = state.participantIds.map(id => `
-    <div class="scorecard ${id===state.currentStrikerId?'active':''}" onclick="selectStriker('${id}')">
-      <div class="name">${escapeHtml(state.playerNames[id]||'')}</div>
-      <div class="score tabular">${fs.scores[id]||0}</div>
-      <div class="team">Team ${teamOf(id)}</div>
-    </div>`).join('');
+  const { scores } = computeFrameState(state.participantIds, state.events);
+  const teamAScore = state.teamA.reduce((s,id) => s + (scores[id]||0), 0);
+  const teamBScore = state.teamB.reduce((s,id) => s + (scores[id]||0), 0);
 
-  const ballButtons = BALL_COLORS.map(b => `
-    <div style="text-align:center">
-      <button class="ball-btn" style="background:${b.hex};color:${b.text}" onclick="potBall('${b.name}')">${b.points}</button>
-      <div class="ball-label">${b.label}</div>
-    </div>`).join('');
+  const scorecards = state.participantIds.map(id => {
+    const isA = state.teamA.includes(id);
+    const isStriker = id === state.currentStrikerId;
+    return `
+      <div class="scorecard ${isStriker?'active':''}" onclick="selectStriker('${id}')">
+        <div class="team">${isA?t('teamA'):t('teamB')}</div>
+        <div class="name">${escapeHtml(state.playerNames[id]||'')}</div>
+        <div class="score tabular">${scores[id]||0}</div>
+      </div>`;
+  }).join('');
+
+  const balls = BALL_COLORS.map(b => `
+    <button class="ball-btn" style="background:${b.hex};color:${b.text}" onclick="potBall('${b.name}')">${b.points}</button>
+  `).join('');
 
   const foulButtons = [4,5,6,7].map(v => `<button class="foul-btn" onclick="recordFoul(${v})">Foul ${v}</button>`).join('');
-
-  const receiverChips = opposingTeam(state.currentStrikerId).length > 1 ? `
-    <div class="section-label">Receiving opponent (gets the foul points)</div>
-    <div class="row wrap">
-      ${opposingTeam(state.currentStrikerId).map(id => `
-        <span class="chip ${state.currentOpponentReceiverId===id?'active':''}" onclick="selectReceiver('${id}')" style="background:${state.currentOpponentReceiverId===id?'var(--brown-light)':'#fff'};border-color:var(--brown-light);color:${state.currentOpponentReceiverId===id?'#fff':'var(--ink)'}">
-          ${escapeHtml(state.playerNames[id]||'')}
-        </span>`).join('')}
-    </div>` : '';
 
   const logHtml = state.events.slice().reverse().map(e => {
     let text = '';
@@ -717,275 +829,327 @@ function renderScoring(){
     else if (e.type === 'FOUL') text = `${e.playerName} FOUL — ${e.foulReceiverName} +${e.points}`;
     else if (e.type === 'SWITCH_TURN') text = `▶ ${e.playerName} on strike`;
     if (e.blackBallDecider) text += ' 🎱 Black Ball Game';
-    const t = new Date(e.timestamp);
-    const time = t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const tVal = new Date(e.timestamp);
+    const time = tVal.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
     return `<div class="log-entry"><span class="log-time">${time}</span>${text}</div>`;
-  }).join('') || `<div class="log-entry" style="opacity:.6">No actions yet. Tap a ball to begin.</div>`;
+  }).join('') || `<div class="log-entry" style="opacity:.6">${t('noActionsYet')}</div>`;
 
   return `
     <div class="topbar">
-      <button class="icon-btn" onclick="go('setup')">← Back</button>
-      <h1>${({ONE_V_ONE:'1v1 Frame',ONE_V_TWO:'1v2 Frame',TWO_V_TWO:'2v2 Frame'})[state.mode]}</h1>
-      <button class="icon-btn" onclick="undoLast()">↺ Undo</button>
+      <button class="icon-btn" onclick="go('setup')">${state.lang==='he'?t('backRtl'):t('back')}</button>
+      <h1>${state.mode} (${state.maxReds} Reds)</h1>
+      <button class="icon-btn" onclick="undoLast()">${t('undo')}</button>
     </div>
     <div class="content">
       <div class="table-surface">
         <div class="scorecards">${scorecards}</div>
+        
+        ${state.validationWarning ? `
+          <div class="toast-warning">
+            <span>⚠️ ${escapeHtml(state.validationWarning)}</span>
+            <button class="btn small" style="width:auto;padding:4px 8px" onclick="undoLast()">${t('undo')}</button>
+          </div>` : ''}
 
-        <div class="section-label">Balls potted by ${escapeHtml(state.playerNames[state.currentStrikerId]||'')}</div>
-        <div class="ball-row">${ballButtons}</div>
+        <div class="section-label">${t('onStrike')}: ${escapeHtml(state.playerNames[state.currentStrikerId]||'')}</div>
+        <div class="ball-row">${balls}</div>
 
-        <div class="section-label">Foul by ${escapeHtml(state.playerNames[state.currentStrikerId]||'')} → points to ${escapeHtml(state.playerNames[state.currentOpponentReceiverId]||'')}</div>
+        <div class="section-label">${t('foulBy')} ${escapeHtml(state.playerNames[state.currentStrikerId]||'')} → ${t('pointsTo')} ${escapeHtml(state.playerNames[state.currentOpponentReceiverId]||'')}</div>
         <div class="foul-row">${foulButtons}</div>
 
-        ${receiverChips}
+        ${opposingTeam(state.currentStrikerId).length > 1 ? `
+          <div class="section-label">${t('receivingOpponent')}</div>
+          <div class="row wrap">
+            ${opposingTeam(state.currentStrikerId).map(id => `
+              <span class="chip ${state.currentOpponentReceiverId===id?'active':''}" onclick="selectReceiver('${id}')">
+                ${escapeHtml(state.playerNames[id]||'')}
+              </span>`).join('')}
+          </div>` : ''}
 
         <div class="log">${logHtml}</div>
-      </div>
-
-      <div style="margin-top:16px">
-        <button class="btn" onclick="requestFinish()">Finish Frame</button>
+        <div style="margin-top:14px">
+          <button class="btn" onclick="requestFinish()">${t('finishFrame')}</button>
+        </div>
       </div>
     </div>
-    ${state.showSummary ? renderSummaryModal(fs) : ''}
-  `;
+    ${state.showSummary ? renderSummaryModal(teamAScore, teamBScore, scores) : ''}`;
 }
 
-function renderSummaryModal(fs){
-  const teamAScore = state.teamA.reduce((s,id)=>s+(fs.scores[id]||0),0);
-  const teamBScore = state.teamB.reduce((s,id)=>s+(fs.scores[id]||0),0);
+function renderSummaryModal(teamAScore, teamBScore, scores){
   const isDraw = teamAScore === teamBScore;
-  const winnerText = isDraw
-    ? 'Draw'
-    : (teamAScore > teamBScore ? 'Team A wins' : 'Team B wins') + (state.decidedByBlackBall ? ' (Black Ball Game)' : '');
+  let winnerText = '';
+  if (isDraw) winnerText = t('drawGame');
+  else winnerText = `${t('winner')}: ${teamAScore > teamBScore ? t('teamA') : t('teamB')}`;
 
   const perPlayer = state.participantIds.map(id => `
     <div class="stat-line">
-      <span>${escapeHtml(state.playerNames[id]||'')}</span>
-      <span class="tabular">${fs.scores[id]||0} pts · break ${fs.highestBreaks[id]||0}</span>
-    </div>
-    <div class="stat-line" style="font-size:.78rem;opacity:.7;border-bottom:none;margin-top:-4px">
-      <span>Fouls given ${fs.foulGiven[id]||0}</span>
-      <span>Fouls received ${fs.foulReceived[id]||0}</span>
-    </div>
-  `).join('');
-
-  // ---- Already saved: offer a rematch instead of the score-entry controls ----
-  if (state.summarySaved){
-    const rematchLabel = state.mode === 'ONE_V_ONE'
-      ? 'Start New Frame (same players)'
-      : 'Start New Frame (pick players)';
-    return `
-      <div class="modal-backdrop" onclick="if(event.target===this) finishSummaryDone()">
-        <div class="modal">
-          <h2>Frame Saved ✓</h2>
-          <p style="font-weight:600;margin:8px 0 0">${winnerText}</p>
-          <p class="tabular" style="font-size:1.1rem;margin:6px 0 16px">Team A: ${teamAScore} — Team B: ${teamBScore}</p>
-          ${perPlayer}
-          <div class="row" style="margin-top:18px">
-            <button class="btn secondary" onclick="finishSummaryDone()">Done</button>
-            <button class="btn" onclick="rematch()">${rematchLabel}</button>
-          </div>
-        </div>
-      </div>`;
-  }
-
-  const blackBallSection = isDraw ? `
-    <div class="card" style="margin-top:14px;border-color:var(--brown)">
-      <h3 style="text-transform:none;font-size:1.05rem">Black Ball Game</h3>
-      <p style="font-size:.85rem;margin:6px 0 12px">
-        Scores are level. Re-spot the black — the frame is decided the moment
-        someone pots it, or the moment either side fouls.
-      </p>
-      <div class="section-label" style="color:var(--ink)">On strike</div>
-      <div class="row wrap">
-        ${state.participantIds.map(id => `
-          <span class="chip ${state.currentStrikerId===id?'active':''}" onclick="selectStriker('${id}')">
-            ${escapeHtml(state.playerNames[id]||'')}
-          </span>`).join('')}
-      </div>
-      <div style="text-align:center;margin:14px 0 6px">
-        <button class="ball-btn" style="background:#212121;color:#fff;width:64px;height:64px;font-size:1.1rem" onclick="potBlackBallDecider()">7</button>
-        <div class="ball-label">Pot Black</div>
-      </div>
-      <div class="section-label" style="color:var(--ink)">Foul by ${escapeHtml(state.playerNames[state.currentStrikerId]||'')} → point(s) to ${escapeHtml(state.playerNames[state.currentOpponentReceiverId]||'')}</div>
-      <div class="foul-row">
-        ${[4,5,6,7].map(v => `<button class="foul-btn" onclick="recordBlackBallDeciderFoul(${v})">Foul ${v}</button>`).join('')}
-      </div>
-      ${opposingTeam(state.currentStrikerId).length > 1 ? `
-        <div class="section-label" style="color:var(--ink)">Receiving opponent</div>
-        <div class="row wrap">
-          ${opposingTeam(state.currentStrikerId).map(id => `
-            <span class="chip ${state.currentOpponentReceiverId===id?'active':''}" onclick="selectReceiver('${id}')">
-              ${escapeHtml(state.playerNames[id]||'')}
-            </span>`).join('')}
-        </div>` : ''}
-    </div>
-  ` : '';
+      <span>${escapeHtml(state.playerNames[id]||'')} (${state.teamA.includes(id)?'A':'B'})</span>
+      <span class="tabular" style="font-weight:600">${scores[id]||0} pts</span>
+    </div>`).join('');
 
   return `
     <div class="modal-backdrop" onclick="if(event.target===this && !${state.saving}) dismissSummary()">
       <div class="modal">
-        <h2>Frame Summary</h2>
+        <h2>${t('frameSummary')}</h2>
         <p style="font-weight:600;margin:8px 0 0">${winnerText}</p>
         <p class="tabular" style="font-size:1.1rem;margin:6px 0 16px">Team A: ${teamAScore} — Team B: ${teamBScore}</p>
         ${perPlayer}
-        ${blackBallSection}
-        ${state.saveError ? `<div class="error-box" style="margin-top:12px">${state.saveError}</div>` : ''}
-        <div class="row" style="margin-top:18px">
-          <button class="btn secondary" ${state.saving?'disabled':''} onclick="dismissSummary()">Keep Playing</button>
-          <button class="btn" ${state.saving?'disabled':''} onclick="confirmSaveFrame()">
-            ${state.saving ? 'Saving…' : (isDraw ? 'Save as Draw' : 'Save to Firebase')}
-          </button>
+
+        ${isDraw ? `
+          <div class="card" style="background:#fff3cd;border-color:#ffe69c;color:#664d03;margin:14px 0">
+            <strong>🎱 ${t('blackBallGameHeader')}</strong>
+            <p style="font-size:.85rem;margin:4px 0 10px">${t('blackBallDeciderNotice')}</p>
+            <div class="row wrap">
+              ${state.participantIds.map(id => `
+                <span class="chip ${state.currentStrikerId===id?'active':''}" onclick="selectStriker('${id}')">
+                  ${escapeHtml(state.playerNames[id]||'')}
+                </span>`).join('')}
+            </div>
+            <div style="text-align:center;margin:12px 0 6px">
+              <button class="ball-btn" style="background:#212121;color:#fff;width:60px;height:60px;font-size:1.1rem" onclick="potBlackBallDecider()">${t('potBlack')}</button>
+            </div>
+            <div class="foul-row">
+              ${[4,5,6,7].map(v => `<button class="foul-btn" onclick="recordBlackBallDeciderFoul(${v})">Foul ${v}</button>`).join('')}
+            </div>
+          </div>` : ''}
+
+        ${state.saveError ? `<div class="error-box" style="margin-top:12px">${escapeHtml(state.saveError)}</div>` : ''}
+
+        <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px">
+          <button class="btn" ${state.saving||state.summarySaved?'disabled':''} onclick="saveFrame()">${t('saveAndFinish')}</button>
+          <button class="btn secondary" onclick="dismissSummary()">${t('dismiss')}</button>
         </div>
       </div>
     </div>`;
 }
 
-/* ---------- Stats dashboard ---------- */
+async function saveFrame(){
+  state.saving = true; state.saveError = null; render();
+  const { scores, highestBreaks, foulGiven, foulReceived } = computeFrameState(state.participantIds, state.events);
+  const teamAScore = state.teamA.reduce((s,id) => s + (scores[id]||0), 0);
+  const teamBScore = state.teamB.reduce((s,id) => s + (scores[id]||0), 0);
+
+  let winnerTeam = 'DRAW';
+  if (teamAScore > teamBScore) winnerTeam = 'A';
+  else if (teamBScore > teamAScore) winnerTeam = 'B';
+
+  const winnerPlayerIds = winnerTeam === 'A' ? state.teamA : (winnerTeam === 'B' ? state.teamB : []);
+
+  const doc = {
+    mode: state.mode,
+    maxReds: state.maxReds,
+    playerIds: state.participantIds,
+    playerNames: state.playerNames,
+    teamA: state.teamA,
+    teamB: state.teamB,
+    finalScores: scores,
+    highestBreaks,
+    foulPointsGiven: foulGiven,
+    foulPointsReceived: foulReceived,
+    teamAScore,
+    teamBScore,
+    winnerTeam,
+    winnerPlayerIds,
+    decidedByBlackBall: state.decidedByBlackBall,
+    events: state.events,
+    createdAt: Date.now()
+  };
+
+  try{
+    await db.collection('frames').add(doc);
+    state.summarySaved = true;
+    state.saving = false;
+    go('history');
+  } catch(e){
+    state.saveError = e.message;
+    state.saving = false;
+    render();
+  }
+}
+
+/* Statistics */
 async function loadStats(){
   state.statsLoading = true; state.statsError = null; render();
   try{
-    const [playersSnap, framesSnap] = await Promise.all([
-      db.collection('players').orderBy('name').get(),
-      db.collection('frames').orderBy('createdAt','desc').get()
-    ]);
-    const players = playersSnap.docs.map(d => ({ id:d.id, ...d.data() }));
-    const frames = framesSnap.docs.map(d => ({ id:d.id, ...d.data() }));
-    state.summaries = players.map(p => buildSummary(p, frames)).sort((a,b)=>b.highestBreak-a.highestBreak);
+    const snap = await db.collection('players').orderBy('name').get();
+    state.players = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    const fSnap = await db.collection('frames').get();
+    state.summaries = fSnap.docs.map(d => ({ id:d.id, ...d.data() }));
   } catch(e){ state.statsError = e.message; }
   state.statsLoading = false; render();
 }
-function buildSummary(player, frames){
-  const played = frames.filter(f => (f.playerIds||[]).includes(player.id));
-  const framesWon = played.filter(f => (f.winnerPlayerIds||[]).includes(player.id)).length;
-  const highestBreak = Math.max(0, ...played.map(f => (f.highestBreaks||{})[player.id] || 0));
-  const bestFrameScore = Math.max(0, ...played.map(f => (f.finalScores||{})[player.id] || 0));
-  const foulGiven = played.reduce((s,f)=>s+((f.foulPointsGiven||{})[player.id]||0),0);
-  const foulReceived = played.reduce((s,f)=>s+((f.foulPointsReceived||{})[player.id]||0),0);
-  return { player, framesPlayed: played.length, framesWon, highestBreak, bestFrameScore, foulGiven, foulReceived };
+
+function openPlayerDetail(id, name){
+  state.selectedPlayerId = id;
+  state.selectedPlayerName = name;
+  loadPlayerFrames(id);
 }
+
 function renderStats(){
+  const playerStats = state.players.map(p => {
+    const pFrames = state.summaries.filter(f => (f.playerIds||[]).includes(p.id));
+    const totalFrames = pFrames.length;
+    const wins = pFrames.filter(f => (f.winnerPlayerIds||[]).includes(p.id)).length;
+    const highestBreak = Math.max(0, ...pFrames.map(f => (f.highestBreaks||{})[p.id] || 0));
+    const fg = pFrames.reduce((s,f) => s + ((f.foulPointsGiven||{})[p.id]||0), 0);
+    const fr = pFrames.reduce((s,f) => s + ((f.foulPointsReceived||{})[p.id]||0), 0);
+
+    return `
+      <div class="card" style="cursor:pointer" onclick="openPlayerDetail('${p.id}', '${escapeHtml(p.name)}')">
+        <h3>${escapeHtml(p.name)}</h3>
+        <div style="font-size:.85rem;opacity:.7;margin-top:4px">Frames: ${totalFrames} · Wins: ${wins}</div>
+        <div class="stat-line" style="margin-top:8px">
+          <span>${t('highestBreak')}</span>
+          <span class="tabular font-weight:600">${highestBreak}</span>
+        </div>
+        <div class="stat-line">
+          <span>${t('totalFoulsGivenReceived')}</span>
+          <span class="tabular font-weight:600">${fg} / ${fr}</span>
+        </div>
+      </div>`;
+  }).join('');
+
   return `
     <div class="topbar">
-      <button class="icon-btn" onclick="go('home')">← Back</button>
-      <h1>Player Statistics</h1>
+      <button class="icon-btn" onclick="go('home')">${state.lang==='he'?t('backRtl'):t('back')}</button>
+      <h1>${t('playerStats')}</h1>
+      ${renderLangButton()}
     </div>
     <div class="content stack">
-      <button class="btn secondary" onclick="loadFrameHistory();go('history')">📜 View Frame History</button>
-      ${state.statsLoading ? `<div class="empty">Loading…</div>` : ''}
-      ${state.statsError ? `<div class="error-box">${state.statsError}</div>` : ''}
-      ${(!state.statsLoading && state.summaries.length===0) ? `<div class="empty">No completed frames yet.</div>` : ''}
-      ${state.summaries.map(s => `
-        <div class="card" onclick="openPlayerDetail('${s.player.id}','${escapeHtml(s.player.name).replace(/'/g,"\\'")}')" style="cursor:pointer">
-          <h3 style="text-transform:none">${escapeHtml(s.player.name)}</h3>
-          <div class="stat-line"><span>Frames played</span><span>${s.framesPlayed}</span></div>
-          <div class="stat-line"><span>Frames won</span><span>${s.framesWon}</span></div>
-          <div class="stat-line"><span>Highest break</span><span>${s.highestBreak}</span></div>
-          <div class="stat-line"><span>Best frame score</span><span>${s.bestFrameScore}</span></div>
-          <div class="stat-line"><span>Total foul points given / received</span><span>${s.foulGiven} / ${s.foulReceived}</span></div>
-        </div>
-      `).join('')}
+      ${state.statsLoading ? `<div class="empty">...</div>` : (playerStats || `<div class="empty">No stats available.</div>`)}
     </div>`;
 }
 
-/* ---------- Player detail ---------- */
-async function openPlayerDetail(id, name){
-  state.selectedPlayerId = id; state.selectedPlayerName = name;
-  state.playerDetailLoading = true; state.playerFrames = [];
-  go('playerDetail');
+async function loadPlayerFrames(id){
+  state.playerDetailLoading = true; render();
   try{
-    const snap = await db.collection('frames')
-      .where('playerIds','array-contains', id)
-      .orderBy('createdAt','asc').get();
-    state.playerFrames = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    const snap = await db.collection('frames').where('playerIds','array-contains', id).get();
+    state.playerFrames = snap.docs.map(d => ({ id:d.id, ...d.data() })).sort((a,b) => a.createdAt - b.createdAt);
   } catch(e){ state.statsError = e.message; }
-  state.playerDetailLoading = false; render();
+  state.playerDetailLoading = false;
+  go('playerDetail');
 }
+
+function openFrameDetail(id){
+  state.selectedFrame = state.playerFrames.find(f => f.id === id) || state.frames.find(f => f.id === id);
+  if (!state.selectedFrame){
+    db.collection('frames').doc(id).get().then(doc => {
+      if (doc.exists){
+        state.selectedFrame = { id: doc.id, ...doc.data() };
+        go('frameDetail');
+      }
+    });
+  } else {
+    go('frameDetail');
+  }
+}
+
 function renderPlayerDetail(){
   const id = state.selectedPlayerId;
   const frames = state.playerFrames;
   const scores = frames.map(f => (f.finalScores||{})[id] || 0);
   const breaks = frames.map(f => (f.highestBreaks||{})[id] || 0);
   const foulsGivenSeries = frames.map(f => (f.foulPointsGiven||{})[id] || 0);
-  const highestBreak = Math.max(0, ...breaks);
-  const bestScore = Math.max(0, ...scores);
-  const wins = frames.filter(f => (f.winnerPlayerIds||[]).includes(id)).length;
-  const totalGiven = frames.reduce((s,f)=>s+((f.foulPointsGiven||{})[id]||0),0);
-  const totalReceived = frames.reduce((s,f)=>s+((f.foulPointsReceived||{})[id]||0),0);
-  const mostFoulGivenInFrame = Math.max(0, ...foulsGivenSeries);
-  const mostFoulReceivedInFrame = Math.max(0, ...frames.map(f => (f.foulPointsReceived||{})[id] || 0));
+  const foulsReceivedSeries = frames.map(f => (f.foulPointsReceived||{})[id] || 0);
 
-  const history = frames.slice().reverse().map(f => {
-    const won = (f.winnerPlayerIds||[]).includes(id);
-    const d = new Date(f.createdAt);
-    return `<div class="stat-line">
-      <span>${d.toLocaleDateString([], {day:'2-digit',month:'short'})} — Score ${(f.finalScores||{})[id]||0}${won?' (Won)':''}</span>
-      <span style="opacity:.7">Break ${(f.highestBreaks||{})[id]||0}</span>
-    </div>`;
-  }).join('');
+  let maxBreakFrame = null, maxScoreFrame = null, maxFgFrame = null, maxFrFrame = null;
+  let highestBreak = 0, bestScore = 0, maxFg = 0, maxFr = 0;
+
+  frames.forEach(f => {
+    const b = (f.highestBreaks||{})[id]||0;
+    const s = (f.finalScores||{})[id]||0;
+    const fg = (f.foulPointsGiven||{})[id]||0;
+    const fr = (f.foulPointsReceived||{})[id]||0;
+
+    if (b >= highestBreak) { highestBreak = b; maxBreakFrame = f.id; }
+    if (s >= bestScore) { bestScore = s; maxScoreFrame = f.id; }
+    if (fg >= maxFg) { maxFg = fg; maxFgFrame = f.id; }
+    if (fr >= maxFr) { maxFr = fr; maxFrFrame = f.id; }
+  });
 
   return `
     <div class="topbar">
-      <button class="icon-btn" onclick="go('stats')">← Back</button>
-      <h1>${escapeHtml(state.selectedPlayerName)}</h1>
+      <button class="icon-btn" onclick="go('stats')">${state.lang==='he'?t('backRtl'):t('back')}</button>
+      <h1>${escapeHtml(state.selectedPlayerName||'Player')}</h1>
+      ${renderLangButton()}
     </div>
     <div class="content stack">
-      ${state.playerDetailLoading ? `<div class="empty">Loading…</div>` : ''}
-      ${(!state.playerDetailLoading && frames.length===0) ? `<div class="empty">No saved frames for this player yet.</div>` : ''}
-      ${frames.length>0 ? `
-        <div class="card">
-          <div class="stat-line"><span>Frames played</span><span>${frames.length}</span></div>
-          <div class="stat-line"><span>Wins</span><span>${wins}</span></div>
-          <div class="stat-line"><span>Highest break</span><span>${highestBreak}</span></div>
-          <div class="stat-line"><span>Best frame score</span><span>${bestScore}</span></div>
-          <div class="stat-line"><span>Most foul points given in a single frame</span><span>${mostFoulGivenInFrame}</span></div>
-          <div class="stat-line"><span>Most foul points received in a single frame</span><span>${mostFoulReceivedInFrame}</span></div>
-          <div class="stat-line"><span>Total foul points given</span><span>${totalGiven}</span></div>
-          <div class="stat-line"><span>Total foul points received</span><span>${totalReceived}</span></div>
+      <div class="row wrap">
+        <div class="metric-card" style="flex:1" onclick="${maxBreakFrame?`openFrameDetail('${maxBreakFrame}')`:''}">
+          <div style="font-size:.75rem;opacity:.7">${t('highestBreak')}</div>
+          <div style="font-size:1.5rem;font-weight:700" class="tabular">${highestBreak}</div>
         </div>
-        <div class="section-label" style="color:var(--ink)">Score progression</div>
-        <canvas class="chart" id="scoreChart"></canvas>
-        <div class="section-label" style="color:var(--ink)">Break progression</div>
-        <canvas class="chart" id="breakChart"></canvas>
-        <div class="section-label" style="color:var(--ink)">Fouls given over time</div>
-        <canvas class="chart" id="foulsGivenChart"></canvas>
-        <div class="section-label" style="color:var(--ink)">Frame history</div>
-        <div class="card">${history}</div>
-      ` : ''}
+        <div class="metric-card" style="flex:1" onclick="${maxScoreFrame?`openFrameDetail('${maxScoreFrame}')`:''}">
+          <div style="font-size:.75rem;opacity:.7">${t('bestFrameScore')}</div>
+          <div style="font-size:1.5rem;font-weight:700" class="tabular">${bestScore}</div>
+        </div>
+      </div>
+
+      <div class="row wrap">
+        <div class="metric-card" style="flex:1" onclick="${maxFgFrame?`openFrameDetail('${maxFgFrame}')`:''}">
+          <div style="font-size:.75rem;opacity:.7">${t('mostFoulsGivenInFrame')}</div>
+          <div style="font-size:1.5rem;font-weight:700" class="tabular">${maxFg}</div>
+        </div>
+        <div class="metric-card" style="flex:1" onclick="${maxFrFrame?`openFrameDetail('${maxFrFrame}')`:''}">
+          <div style="font-size:.75rem;opacity:.7">${t('mostFoulsReceivedInFrame')}</div>
+          <div style="font-size:1.5rem;font-weight:700" class="tabular">${maxFr}</div>
+        </div>
+      </div>
+
+      <div class="card stack">
+        <h3>${t('scoreProgression')}</h3>
+        <canvas id="scoreChart" class="chart"></canvas>
+      </div>
+
+      <div class="card stack">
+        <h3>${t('breakProgression')}</h3>
+        <canvas id="breakChart" class="chart"></canvas>
+      </div>
+
+      <div class="card stack">
+        <h3>${t('foulsReceivedProgression')}</h3>
+        <canvas id="foulsChart" class="chart"></canvas>
+      </div>
     </div>`;
 }
-function attachCharts(){
-  const id = state.selectedPlayerId;
-  const scores = state.playerFrames.map(f => (f.finalScores||{})[id] || 0);
-  const breaks = state.playerFrames.map(f => (f.highestBreaks||{})[id] || 0);
-  const foulsGiven = state.playerFrames.map(f => (f.foulPointsGiven||{})[id] || 0);
-  const scoreCanvas = document.getElementById('scoreChart');
-  const breakCanvas = document.getElementById('breakChart');
-  const foulsGivenCanvas = document.getElementById('foulsGivenChart');
-  if (scoreCanvas) drawLineChart(scoreCanvas, scores, '#1F7A44');
-  if (breakCanvas) drawLineChart(breakCanvas, breaks, '#8B5E34');
-  if (foulsGivenCanvas) drawLineChart(foulsGivenCanvas, foulsGiven, '#B3261E');
-}
-function drawLineChart(canvas, values, color){
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0,0,rect.width,rect.height);
-  if (values.length === 0) return;
 
-  // Extra top padding reserves room for the value label drawn above each point.
-  const padX = 16, padTop = 22, padBottom = 14;
+function attachCharts(){
+  setTimeout(() => {
+    const id = state.selectedPlayerId;
+    const frames = state.playerFrames;
+    const scores = frames.map(f => (f.finalScores||{})[id] || 0);
+    const breaks = frames.map(f => (f.highestBreaks||{})[id] || 0);
+    const foulsReceived = frames.map(f => (f.foulPointsReceived||{})[id] || 0);
+
+    drawChart('scoreChart', scores, '#1F7A44');
+    drawChart('breakChart', breaks, '#8B5E34');
+    drawChart('foulsChart', foulsReceived, '#1976D2');
+  }, 50);
+}
+
+function drawChart(canvasId, values, color){
+  const cvs = document.getElementById(canvasId);
+  if (!cvs) return;
+  const ctx = cvs.getContext('2d');
+  const rect = cvs.getBoundingClientRect();
+  cvs.width = rect.width * window.devicePixelRatio;
+  cvs.height = rect.height * window.devicePixelRatio;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+  ctx.clearRect(0, 0, rect.width, rect.height);
+  if (!values.length) return;
+
+  const padX = 24, padTop = 24, padBottom = 20;
   const w = rect.width - padX*2, h = rect.height - padTop - padBottom;
   const maxV = Math.max(1, ...values), minV = Math.min(0, ...values);
   const range = Math.max(1, maxV - minV);
-  const stepX = values.length > 1 ? w / (values.length-1) : 0;
+  const stepX = values.length > 1 ? w / (values.length - 1) : 0;
   const pt = i => [padX + stepX*i, padTop + h - ((values[i]-minV)/range)*h];
 
-  ctx.strokeStyle = '#e6e0cc'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(padX, padTop+h); ctx.lineTo(padX+w, padTop+h); ctx.stroke();
+  ctx.strokeStyle = '#e6e0cc';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padX, padTop+h); ctx.lineTo(padX+w, padTop+h);
+  ctx.stroke();
 
   function drawLabels(){
     ctx.font = '600 10px Inter, sans-serif';
@@ -993,26 +1157,29 @@ function drawLineChart(canvas, values, color){
     ctx.fillStyle = '#1B1B1B';
     values.forEach((v,i) => {
       const [x,y] = pt(i);
-      ctx.fillText(String(v), x, Math.max(10, y - 8));
+      ctx.fillText(String(v), x, Math.max(12, y - 8));
     });
   }
 
   if (values.length === 1){
     const [x,y] = pt(0);
-    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x,y,4,0,7); ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(x,y,4,0,7); ctx.fill();
     drawLabels();
     return;
   }
+
   ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.lineJoin='round'; ctx.lineCap='round';
   ctx.beginPath();
   values.forEach((v,i)=>{ const [x,y]=pt(i); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
   ctx.stroke();
+
   ctx.fillStyle = color;
   values.forEach((v,i)=>{ const [x,y]=pt(i); ctx.beginPath(); ctx.arc(x,y,3.5,0,7); ctx.fill(); });
   drawLabels();
 }
 
-/* ---------- Frame history (list, view, delete) ---------- */
+/* History */
 async function loadFrameHistory(){
   state.framesLoading = true; state.framesError = null; render();
   try{
@@ -1021,150 +1188,114 @@ async function loadFrameHistory(){
   } catch(e){ state.framesError = e.message; }
   state.framesLoading = false; render();
 }
-function openFrameDetail(frameId){
-  const frame = state.frames.find(f => f.id === frameId);
-  if (!frame) return;
-  state.selectedFrame = frame;
-  go('frameDetail');
-}
-function requestDeleteFrame(frameId){ state.confirmDeleteId = frameId; render(); }
-function cancelDeleteFrame(){ state.confirmDeleteId = null; render(); }
-async function confirmDeleteFrame(){
-  const id = state.confirmDeleteId;
-  if (!id) return;
+
+async function deleteFrame(id){
   state.deleting = true; render();
   try{
     await db.collection('frames').doc(id).delete();
-    state.frames = state.frames.filter(f => f.id !== id);
-    // keep player-statistics / player-history views in sync next time they're opened
-    state.summaries = [];
-    state.playerFrames = state.playerFrames.filter(f => f.id !== id);
     state.confirmDeleteId = null;
-    state.deleting = false;
-    if (state.screen === 'frameDetail' && state.selectedFrame && state.selectedFrame.id === id){
-      state.selectedFrame = null;
-      go('history');
-    } else {
-      render();
-    }
-  } catch(e){
-    state.deleting = false;
-    state.framesError = e.message;
-    render();
-  }
+    await loadFrameHistory();
+  } catch(e){ state.framesError = e.message; }
+  state.deleting = false; render();
 }
+
 function renderHistory(){
-  const rows = state.frames.map(f => {
+  const list = state.frames.map(f => {
     const d = new Date(f.createdAt);
-    const dateStr = d.toLocaleDateString([], {day:'2-digit',month:'short',year:'numeric'}) + ' · ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    const teamAScore = (f.teamScores||{}).A ?? (f.teamA||[]).reduce((s,id)=>s+((f.finalScores||{})[id]||0),0);
-    const teamBScore = (f.teamScores||{}).B ?? (f.teamB||[]).reduce((s,id)=>s+((f.finalScores||{})[id]||0),0);
-    const names = id => escapeHtml((f.playerNames||{})[id] || id);
-    const teamAName = (f.teamA||[]).map(names).join(' & ');
-    const teamBName = (f.teamB||[]).map(names).join(' & ');
+    const dateStr = d.toLocaleDateString([], {day:'2-digit',month:'short',year:'numeric'});
+    const teamAName = f.teamA.map(id => f.playerNames[id]||'').join(' & ');
+    const teamBName = f.teamB.map(id => f.playerNames[id]||'').join(' & ');
     const winner = (f.winnerTeam === 'A' ? teamAName : (f.winnerTeam === 'B' ? teamBName : 'Draw')) + (f.decidedByBlackBall ? ' 🎱' : '');
+
     return `
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
           <div style="cursor:pointer;flex:1" onclick="openFrameDetail('${f.id}')">
-            <div style="font-size:.75rem;opacity:.6">${dateStr} · ${({ONE_V_ONE:'1v1',ONE_V_TWO:'1v2',TWO_V_TWO:'2v2'})[f.mode] || f.mode}</div>
-            <div style="font-weight:600;margin-top:2px">${teamAName} <span class="tabular">${teamAScore}</span> — <span class="tabular">${teamBScore}</span> ${teamBName}</div>
-            <div style="font-size:.8rem;opacity:.7;margin-top:2px">Winner: ${winner}</div>
+            <div style="font-size:.75rem;opacity:.6">${dateStr} · ${f.mode} (${f.maxReds||15} Reds)</div>
+            <div style="font-weight:600;margin-top:2px">${escapeHtml(teamAName)} <span class="tabular">${f.teamAScore}</span> — <span class="tabular">${f.teamBScore}</span> ${escapeHtml(teamBName)}</div>
+            <div style="font-size:.8rem;opacity:.7;margin-top:2px">${t('winner')}: ${escapeHtml(winner)}</div>
           </div>
-          <button class="btn small danger" onclick="event.stopPropagation();requestDeleteFrame('${f.id}')">Delete</button>
+          <button class="btn small danger" onclick="event.stopPropagation();state.confirmDeleteId='${f.id}';render()">${t('deleteFrame')}</button>
         </div>
       </div>`;
   }).join('');
 
   return `
     <div class="topbar">
-      <button class="icon-btn" onclick="go('home')">← Back</button>
-      <h1>Frame History</h1>
+      <button class="icon-btn" onclick="go('home')">${state.lang==='he'?t('backRtl'):t('back')}</button>
+      <h1>${t('frameHistory')}</h1>
+      ${renderLangButton()}
     </div>
     <div class="content stack">
-      ${state.framesLoading ? `<div class="empty">Loading…</div>` : ''}
-      ${state.framesError ? `<div class="error-box">${state.framesError}</div>` : ''}
-      ${(!state.framesLoading && state.frames.length===0) ? `<div class="empty">No saved frames yet.</div>` : ''}
-      ${rows}
+      ${state.framesLoading ? `<div class="empty">...</div>` : (list || `<div class="empty">No frames recorded yet.</div>`)}
     </div>
-    ${state.confirmDeleteId ? renderDeleteConfirm() : ''}
-  `;
-}
-function renderDeleteConfirm(){
-  return `
-    <div class="modal-backdrop" onclick="if(event.target===this && !${state.deleting}) cancelDeleteFrame()">
-      <div class="modal">
-        <h2>Delete this frame?</h2>
-        <p style="margin-top:10px">This permanently removes the frame and its event log. Every player's statistics will update automatically once it's gone.</p>
-        <div class="row" style="margin-top:18px">
-          <button class="btn secondary" ${state.deleting?'disabled':''} onclick="cancelDeleteFrame()">Cancel</button>
-          <button class="btn danger" ${state.deleting?'disabled':''} onclick="confirmDeleteFrame()">${state.deleting?'Deleting…':'Delete Frame'}</button>
+    ${state.confirmDeleteId ? `
+      <div class="modal-backdrop" onclick="state.confirmDeleteId=null;render()">
+        <div class="modal">
+          <h2>${t('confirmDelete')}</h2>
+          <p style="margin:12px 0">${t('deleteFrame')}?</p>
+          <div style="display:flex;gap:10px;margin-top:16px">
+            <button class="btn danger" ${state.deleting?'disabled':''} onclick="deleteFrame('${state.confirmDeleteId}')">${t('deleteFrame')}</button>
+            <button class="btn secondary" onclick="state.confirmDeleteId=null;render()">${t('dismiss')}</button>
+          </div>
         </div>
-      </div>
-    </div>`;
+      </div>` : ''}`;
 }
+
 function renderFrameDetail(){
   const f = state.selectedFrame;
-  if (!f) return `<div class="topbar"><button class="icon-btn" onclick="go('history')">← Back</button><h1>Frame</h1></div><div class="content"><div class="empty">Frame not found.</div></div>`;
+  if (!f) return `<div class="content"><div class="empty">Frame not found.</div></div>`;
 
-  const names = id => escapeHtml((f.playerNames||{})[id] || id);
   const d = new Date(f.createdAt);
-  const dateStr = d.toLocaleDateString([], {day:'2-digit',month:'short',year:'numeric'}) + ' · ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-  const teamAScore = (f.teamScores||{}).A ?? 0;
-  const teamBScore = (f.teamScores||{}).B ?? 0;
-  const winner = (f.winnerTeam === 'A' ? 'Team A' : (f.winnerTeam === 'B' ? 'Team B' : 'Draw')) + (f.decidedByBlackBall ? ' (Black Ball Game)' : '');
+  const dateStr = d.toLocaleDateString([], {day:'2-digit',month:'short',year:'numeric'});
+  const teamAName = f.teamA.map(id => f.playerNames[id]||'').join(' & ');
+  const teamBName = f.teamB.map(id => f.playerNames[id]||'').join(' & ');
+  const winner = (f.winnerTeam === 'A' ? teamAName : (f.winnerTeam === 'B' ? teamBName : 'Draw')) + (f.decidedByBlackBall ? ' 🎱' : '');
 
-  const perPlayer = (f.playerIds||[]).map(id => `
+  const perPlayer = f.playerIds.map(id => `
     <div class="stat-line">
-      <span>${names(id)}</span>
-      <span class="tabular">${(f.finalScores||{})[id]||0} pts · break ${(f.highestBreaks||{})[id]||0}</span>
-    </div>
-    <div class="stat-line" style="font-size:.78rem;opacity:.7;border-bottom:none;margin-top:-4px">
-      <span>Fouls given ${(f.foulPointsGiven||{})[id]||0}</span>
-      <span>Fouls received ${(f.foulPointsReceived||{})[id]||0}</span>
+      <span>${escapeHtml(f.playerNames[id]||'')}</span>
+      <span class="tabular font-weight:600">${(f.finalScores||{})[id]||0} pts</span>
     </div>`).join('');
 
-  const events = (f.events||[]);
-  const logHtml = events.map(e => {
+  const logHtml = (f.events||[]).slice().reverse().map(e => {
     let text = '';
-    if (e.type === 'BALL') text = `${e.playerName} potted ${(e.ball||'').charAt(0)+(e.ball||'').slice(1).toLowerCase()} (+${e.points})`;
+    if (e.type === 'BALL') text = `${e.playerName} potted ${e.ball[0]+e.ball.slice(1).toLowerCase()} (+${e.points})`;
     else if (e.type === 'FOUL') text = `${e.playerName} FOUL — ${e.foulReceiverName} +${e.points}`;
     else if (e.type === 'SWITCH_TURN') text = `▶ ${e.playerName} on strike`;
     if (e.blackBallDecider) text += ' 🎱 Black Ball Game';
-    const t = new Date(e.timestamp);
-    const time = t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const tVal = new Date(e.timestamp);
+    const time = tVal.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
     return `<div class="log-entry" style="color:var(--ink)"><span class="log-time">${time}</span>${text}</div>`;
   }).join('') || `<div class="empty">No event log saved for this frame.</div>`;
 
   return `
     <div class="topbar">
-      <button class="icon-btn" onclick="go('history')">← Back</button>
+      <button class="icon-btn" onclick="go('history')">${state.lang==='he'?t('backRtl'):t('back')}</button>
       <h1>Frame Detail</h1>
+      ${renderLangButton()}
     </div>
     <div class="content stack">
       <div class="card">
-        <div style="font-size:.8rem;opacity:.65">${dateStr} · ${({ONE_V_ONE:'1v1',ONE_V_TWO:'1v2',TWO_V_TWO:'2v2'})[f.mode] || f.mode}</div>
-        <h3 style="margin-top:6px;text-transform:none">Team A ${teamAScore} — ${teamBScore} Team B</h3>
-        <div style="font-weight:600">Winner: ${winner}</div>
+        <div style="font-size:.8rem;opacity:.65">${dateStr} · ${f.mode} (${f.maxReds||15} Reds)</div>
+        <h3 style="margin-top:6px;text-transform:none">${escapeHtml(teamAName)} ${f.teamAScore} — ${f.teamBScore} ${escapeHtml(teamBName)}</h3>
+        <div style="font-weight:600;margin-top:4px">${t('winner')}: ${escapeHtml(winner)}</div>
       </div>
       <div class="card">
-        <h3 style="text-transform:none;margin-bottom:8px">Per player</h3>
+        <h3 style="text-transform:none;margin-bottom:8px">${t('perPlayer')}</h3>
         ${perPlayer}
       </div>
-      <div class="section-label" style="color:var(--ink)">Full action log</div>
+      <div class="section-label" style="color:var(--ink)">${t('fullActionLog')}</div>
       <div class="card" style="max-height:260px;overflow-y:auto">${logHtml}</div>
-      <button class="btn danger" onclick="requestDeleteFrame('${f.id}')">Delete This Frame</button>
-    </div>
-    ${state.confirmDeleteId ? renderDeleteConfirm() : ''}
-  `;
+      <button class="btn danger" onclick="deleteFrame('${f.id}')">${t('deleteFrame')}</button>
+    </div>`;
 }
 
-/* ---------- utils ---------- */
-function escapeHtml(str){
-  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function escapeHtml(str) {
+  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/* ---------- boot ---------- */
+/* Initial render */
 render();
 </script>
 </body>
