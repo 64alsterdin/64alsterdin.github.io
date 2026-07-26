@@ -9,7 +9,7 @@
 <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22Snooker%20Tracker%22%2C%22short_name%22%3A%22Snooker%22%2C%22start_url%22%3A%22.%2Findex.html%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23FFFFFF%22%2C%22theme_color%22%3A%22%231F7A44%22%7D">
 <title>Snooker Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
@@ -34,9 +34,9 @@
     -webkit-tap-highlight-color:transparent;
   }
   h1,h2,h3,.display{
-    font-family:'Oswald',sans-serif;
-    letter-spacing:.02em;
-    text-transform:uppercase;
+    font-family:'Lora',serif;
+    font-weight:600;
+    letter-spacing:0;
     margin:0;
   }
   .tabular{ font-variant-numeric:tabular-nums; }
@@ -73,8 +73,8 @@
     display:inline-flex; align-items:center; justify-content:center; gap:8px;
     background:var(--felt); color:#FFFFFF;
     border:2px solid var(--brown); border-radius:12px; padding:14px 18px;
-    font-family:'Oswald',sans-serif; font-size:.95rem; letter-spacing:.04em;
-    text-transform:uppercase; cursor:pointer; width:100%;
+    font-family:'Lora',serif; font-weight:600; font-size:1rem; letter-spacing:0;
+    cursor:pointer; width:100%;
     box-shadow:0 3px 0 var(--brown-dark);
   }
   .btn:active{ transform:translateY(2px); box-shadow:0 1px 0 var(--brown-dark); }
@@ -142,7 +142,7 @@
     box-shadow:0 0 0 3px rgba(201,168,118,.3);
   }
   .scorecard .name{ font-weight:600; font-size:.85rem; opacity:.9; }
-  .scorecard .score{ font-family:'Oswald',sans-serif; font-size:2.1rem; line-height:1.1; }
+  .scorecard .score{ font-family:'Lora',serif; font-weight:700; font-size:2.1rem; line-height:1.1; }
   .scorecard .team{ font-size:.65rem; opacity:.65; text-transform:uppercase; letter-spacing:.08em; }
 
   .section-label{
@@ -154,7 +154,7 @@
   .ball-btn{
     width:56px; height:56px; border-radius:50%; border:none; cursor:pointer;
     display:flex; flex-direction:column; align-items:center; justify-content:center;
-    font-family:'Oswald',sans-serif; font-weight:600; font-size:.95rem;
+    font-family:'Lora',serif; font-weight:700; font-size:1rem;
     box-shadow: inset -4px -6px 10px rgba(0,0,0,.35), inset 3px 4px 6px rgba(255,255,255,.35), 0 3px 6px rgba(0,0,0,.4);
   }
   .ball-btn:active{ transform:scale(.94); }
@@ -163,7 +163,7 @@
   .foul-row{ display:flex; justify-content:center; gap:8px; flex-wrap:wrap; }
   .foul-btn{
     background:rgba(179,38,30,.85); color:#fff; border:none; border-radius:10px;
-    padding:10px 16px; font-family:'Oswald',sans-serif; font-size:.9rem; cursor:pointer;
+    padding:10px 16px; font-family:'Lora',serif; font-weight:600; font-size:.95rem; cursor:pointer;
   }
   .foul-btn:active{ background:#7a1a15; }
 
