@@ -243,8 +243,16 @@ try {
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
     firebaseReady = true;
+    // Cache reads/writes locally so the app keeps working with no/weak signal
+    // (e.g. at the club) and automatically syncs everything once back online.
     db.enablePersistence().catch((err) => {
-      console.warn('Offline persistence info:', err.code);
+      if (err.code === 'failed-precondition') {
+        console.warn('Offline persistence unavailable: multiple tabs open.');
+      } else if (err.code === 'unimplemented') {
+        console.warn('Offline persistence not supported in this browser.');
+      } else {
+        console.warn('Offline persistence failed to enable:', err);
+      }
     });
   }
 } catch (e) {
@@ -302,6 +310,17 @@ const i18n = {
     fullActionLog: "Full action log",
     perPlayer: "Per player",
     confirmDelete: "Confirm Delete",
+    modeShort1v1: "1v1",
+    modeShort1v2: "1v2",
+    modeShort2v2: "2v2",
+    breakLabel: "break",
+    foulsGivenReceived: "Fouls given / received",
+    frameSaved: "Frame Saved ✓",
+    done: "Done",
+    rematchSamePlayers: "Start New Frame (same players)",
+    rematchPickPlayers: "Start New Frame (pick players)",
+    deleteFrameConfirmBody: "This permanently removes the frame and its event log. Every player's statistics will update automatically once it's gone.",
+    cancel: "Cancel",
   },
   he: {
     title: "מעקב סנוקר",
@@ -352,6 +371,17 @@ const i18n = {
     fullActionLog: "יומן פעולות מלא",
     perPlayer: "לפי שחקן",
     confirmDelete: "אישור מחיקה",
+    modeShort1v1: "1 נגד 1",
+    modeShort1v2: "1 נגד 2",
+    modeShort2v2: "2 נגד 2",
+    breakLabel: "ברייק",
+    foulsGivenReceived: "עבירות שהוענקו / התקבלו",
+    frameSaved: "הפריים נשמר ✓",
+    done: "סיום",
+    rematchSamePlayers: "התחל פריים חדש (אותם שחקנים)",
+    rematchPickPlayers: "התחל פריים חדש (בחר שחקנים)",
+    deleteFrameConfirmBody: "פעולה זו מוחקת לצמיתות את הפריים ואת יומן האירועים שלו. הסטטיסטיקות של כל שחקן יתעדכנו אוטומטית.",
+    cancel: "ביטול",
   }
 };
 
@@ -441,6 +471,10 @@ const state = {
 
 function t(key) {
   return (i18n[state.lang] && i18n[state.lang][key]) || i18n['en'][key] || key;
+}
+
+function modeLabel(mode){
+  return { ONE_V_ONE:t('modeShort1v1'), ONE_V_TWO:t('modeShort1v2'), TWO_V_TWO:t('modeShort2v2') }[mode] || mode;
 }
 
 function toggleLang() {
@@ -672,7 +706,7 @@ function renderSetup(){
       <div class="card stack">
         <div class="section-label">${t('redsInFrame')}</div>
         <div class="row">
-          ${[6, 10, 15].map(r => `<button class="chip ${state.maxReds===r?'active':''}" onclick="setMaxReds(${r})">${r} Reds</button>`).join('')}
+          ${[6, 10, 15].map(r => `<button class="chip ${state.maxReds===r?'active':''}" onclick="setMaxReds(${r})">${r} ${t('redsInFrame')}</button>`).join('')}
         </div>
       </div>
 
@@ -802,7 +836,8 @@ function dismissSummary(){
 }
 
 function renderScoring(){
-  const { scores } = computeFrameState(state.participantIds, state.events);
+  const fs = computeFrameState(state.participantIds, state.events);
+  const { scores } = fs;
   const teamAScore = state.teamA.reduce((s,id) => s + (scores[id]||0), 0);
   const teamBScore = state.teamB.reduce((s,id) => s + (scores[id]||0), 0);
 
@@ -837,7 +872,7 @@ function renderScoring(){
   return `
     <div class="topbar">
       <button class="icon-btn" onclick="go('setup')">${state.lang==='he'?t('backRtl'):t('back')}</button>
-      <h1>${state.mode} (${state.maxReds} Reds)</h1>
+      <h1>${modeLabel(state.mode)} (${state.maxReds} ${t('redsInFrame')})</h1>
       <button class="icon-btn" onclick="undoLast()">${t('undo')}</button>
     </div>
     <div class="content">
@@ -871,10 +906,11 @@ function renderScoring(){
         </div>
       </div>
     </div>
-    ${state.showSummary ? renderSummaryModal(teamAScore, teamBScore, scores) : ''}`;
+    ${state.showSummary ? renderSummaryModal(teamAScore, teamBScore, fs) : ''}`;
 }
 
-function renderSummaryModal(teamAScore, teamBScore, scores){
+function renderSummaryModal(teamAScore, teamBScore, fs){
+  const scores = fs.scores;
   const isDraw = teamAScore === teamBScore;
   let winnerText = '';
   if (isDraw) winnerText = t('drawGame');
@@ -883,8 +919,29 @@ function renderSummaryModal(teamAScore, teamBScore, scores){
   const perPlayer = state.participantIds.map(id => `
     <div class="stat-line">
       <span>${escapeHtml(state.playerNames[id]||'')} (${state.teamA.includes(id)?'A':'B'})</span>
-      <span class="tabular" style="font-weight:600">${scores[id]||0} pts</span>
+      <span class="tabular" style="font-weight:600">${scores[id]||0} pts · ${t('breakLabel')} ${fs.highestBreaks[id]||0}</span>
+    </div>
+    <div class="stat-line" style="font-size:.78rem;opacity:.7;border-bottom:none;margin-top:-4px">
+      <span>${t('foulsGivenReceived')}: ${fs.foulGiven[id]||0} / ${fs.foulReceived[id]||0}</span>
     </div>`).join('');
+
+  // ---- Already saved: offer a rematch instead of the score-entry controls ----
+  if (state.summarySaved){
+    const rematchLabel = state.mode === 'ONE_V_ONE' ? t('rematchSamePlayers') : t('rematchPickPlayers');
+    return `
+      <div class="modal-backdrop" onclick="if(event.target===this) finishSummaryDone()">
+        <div class="modal">
+          <h2>${t('frameSaved')}</h2>
+          <p style="font-weight:600;margin:8px 0 0">${winnerText}</p>
+          <p class="tabular" style="font-size:1.1rem;margin:6px 0 16px">Team A: ${teamAScore} — Team B: ${teamBScore}</p>
+          ${perPlayer}
+          <div class="row" style="margin-top:18px">
+            <button class="btn secondary" onclick="finishSummaryDone()">${t('done')}</button>
+            <button class="btn" onclick="rematch()">${rematchLabel}</button>
+          </div>
+        </div>
+      </div>`;
+  }
 
   return `
     <div class="modal-backdrop" onclick="if(event.target===this && !${state.saving}) dismissSummary()">
@@ -915,8 +972,8 @@ function renderSummaryModal(teamAScore, teamBScore, scores){
         ${state.saveError ? `<div class="error-box" style="margin-top:12px">${escapeHtml(state.saveError)}</div>` : ''}
 
         <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px">
-          <button class="btn" ${state.saving||state.summarySaved?'disabled':''} onclick="saveFrame()">${t('saveAndFinish')}</button>
-          <button class="btn secondary" onclick="dismissSummary()">${t('dismiss')}</button>
+          <button class="btn" ${state.saving?'disabled':''} onclick="saveFrame()">${state.saving ? '…' : t('saveAndFinish')}</button>
+          <button class="btn secondary" ${state.saving?'disabled':''} onclick="dismissSummary()">${t('dismiss')}</button>
         </div>
       </div>
     </div>`;
@@ -958,11 +1015,33 @@ async function saveFrame(){
     await db.collection('frames').add(doc);
     state.summarySaved = true;
     state.saving = false;
-    go('history');
+    render();
   } catch(e){
     state.saveError = e.message;
     state.saving = false;
     render();
+  }
+}
+
+function finishSummaryDone(){
+  state.showSummary = false;
+  state.summarySaved = false;
+  go('home');
+}
+
+/* Called from the "Start New Frame" button after a frame is saved.
+   1v1: replay with the exact same two players, straight back into scoring.
+   1v2 / 2v2: keep the mode, but clear team picks — teams often get
+   reshuffled between frames — and go back to Match Setup to repick. */
+function rematch(){
+  state.showSummary = false;
+  state.summarySaved = false;
+  if (state.mode === 'ONE_V_ONE'){
+    beginFrame();
+  } else {
+    state.teamA = [];
+    state.teamB = [];
+    go('setup');
   }
 }
 
@@ -1194,9 +1273,17 @@ async function deleteFrame(id){
   try{
     await db.collection('frames').doc(id).delete();
     state.confirmDeleteId = null;
+    state.deleting = false;
+    if (state.screen === 'frameDetail' && state.selectedFrame && state.selectedFrame.id === id){
+      state.selectedFrame = null;
+      go('history');
+    }
     await loadFrameHistory();
-  } catch(e){ state.framesError = e.message; }
-  state.deleting = false; render();
+  } catch(e){
+    state.deleting = false;
+    state.framesError = e.message;
+    render();
+  }
 }
 
 function renderHistory(){
@@ -1211,7 +1298,7 @@ function renderHistory(){
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
           <div style="cursor:pointer;flex:1" onclick="openFrameDetail('${f.id}')">
-            <div style="font-size:.75rem;opacity:.6">${dateStr} · ${f.mode} (${f.maxReds||15} Reds)</div>
+            <div style="font-size:.75rem;opacity:.6">${dateStr} · ${modeLabel(f.mode)} (${f.maxReds||15} ${t('redsInFrame')})</div>
             <div style="font-weight:600;margin-top:2px">${escapeHtml(teamAName)} <span class="tabular">${f.teamAScore}</span> — <span class="tabular">${f.teamBScore}</span> ${escapeHtml(teamBName)}</div>
             <div style="font-size:.8rem;opacity:.7;margin-top:2px">${t('winner')}: ${escapeHtml(winner)}</div>
           </div>
@@ -1229,17 +1316,21 @@ function renderHistory(){
     <div class="content stack">
       ${state.framesLoading ? `<div class="empty">...</div>` : (list || `<div class="empty">No frames recorded yet.</div>`)}
     </div>
-    ${state.confirmDeleteId ? `
-      <div class="modal-backdrop" onclick="state.confirmDeleteId=null;render()">
-        <div class="modal">
-          <h2>${t('confirmDelete')}</h2>
-          <p style="margin:12px 0">${t('deleteFrame')}?</p>
-          <div style="display:flex;gap:10px;margin-top:16px">
-            <button class="btn danger" ${state.deleting?'disabled':''} onclick="deleteFrame('${state.confirmDeleteId}')">${t('deleteFrame')}</button>
-            <button class="btn secondary" onclick="state.confirmDeleteId=null;render()">${t('dismiss')}</button>
-          </div>
+    ${state.confirmDeleteId ? renderDeleteConfirm() : ''}`;
+}
+
+function renderDeleteConfirm(){
+  return `
+    <div class="modal-backdrop" onclick="if(event.target===this && !${state.deleting}){state.confirmDeleteId=null;render();}">
+      <div class="modal">
+        <h2>${t('confirmDelete')}</h2>
+        <p style="margin:12px 0">${t('deleteFrameConfirmBody')}</p>
+        <div style="display:flex;gap:10px;margin-top:16px">
+          <button class="btn secondary" ${state.deleting?'disabled':''} onclick="state.confirmDeleteId=null;render()">${t('cancel')}</button>
+          <button class="btn danger" ${state.deleting?'disabled':''} onclick="deleteFrame('${state.confirmDeleteId}')">${state.deleting?'…':t('deleteFrame')}</button>
         </div>
-      </div>` : ''}`;
+      </div>
+    </div>`;
 }
 
 function renderFrameDetail(){
@@ -1255,7 +1346,10 @@ function renderFrameDetail(){
   const perPlayer = f.playerIds.map(id => `
     <div class="stat-line">
       <span>${escapeHtml(f.playerNames[id]||'')}</span>
-      <span class="tabular font-weight:600">${(f.finalScores||{})[id]||0} pts</span>
+      <span class="tabular" style="font-weight:600">${(f.finalScores||{})[id]||0} pts · ${t('breakLabel')} ${(f.highestBreaks||{})[id]||0}</span>
+    </div>
+    <div class="stat-line" style="font-size:.78rem;opacity:.7;border-bottom:none;margin-top:-4px">
+      <span>${t('foulsGivenReceived')}: ${(f.foulPointsGiven||{})[id]||0} / ${(f.foulPointsReceived||{})[id]||0}</span>
     </div>`).join('');
 
   const logHtml = (f.events||[]).slice().reverse().map(e => {
@@ -1277,7 +1371,7 @@ function renderFrameDetail(){
     </div>
     <div class="content stack">
       <div class="card">
-        <div style="font-size:.8rem;opacity:.65">${dateStr} · ${f.mode} (${f.maxReds||15} Reds)</div>
+        <div style="font-size:.8rem;opacity:.65">${dateStr} · ${modeLabel(f.mode)} (${f.maxReds||15} ${t('redsInFrame')})</div>
         <h3 style="margin-top:6px;text-transform:none">${escapeHtml(teamAName)} ${f.teamAScore} — ${f.teamBScore} ${escapeHtml(teamBName)}</h3>
         <div style="font-weight:600;margin-top:4px">${t('winner')}: ${escapeHtml(winner)}</div>
       </div>
@@ -1287,8 +1381,9 @@ function renderFrameDetail(){
       </div>
       <div class="section-label" style="color:var(--ink)">${t('fullActionLog')}</div>
       <div class="card" style="max-height:260px;overflow-y:auto">${logHtml}</div>
-      <button class="btn danger" onclick="deleteFrame('${f.id}')">${t('deleteFrame')}</button>
-    </div>`;
+      <button class="btn danger" onclick="state.confirmDeleteId='${f.id}';render()">${t('deleteFrame')}</button>
+    </div>
+    ${state.confirmDeleteId ? renderDeleteConfirm() : ''}`;
 }
 
 function escapeHtml(str) {
