@@ -321,6 +321,11 @@ const i18n = {
     rematchPickPlayers: "Start New Frame (pick players)",
     deleteFrameConfirmBody: "This permanently removes the frame and its event log. Every player's statistics will update automatically once it's gone.",
     cancel: "Cancel",
+    leaderboard: "🏆 Leaderboard",
+    leaderboardTitle: "Leaderboard",
+    highestBreakBoard: "Highest Break",
+    highestScoreBoard: "Highest Frame Score",
+    noDataYet: "No data yet.",
   },
   he: {
     title: "מעקב סנוקר",
@@ -382,6 +387,11 @@ const i18n = {
     rematchPickPlayers: "התחל פריים חדש (בחר שחקנים)",
     deleteFrameConfirmBody: "פעולה זו מוחקת לצמיתות את הפריים ואת יומן האירועים שלו. הסטטיסטיקות של כל שחקן יתעדכנו אוטומטית.",
     cancel: "ביטול",
+    leaderboard: "🏆 לוח מובילים",
+    leaderboardTitle: "לוח מובילים",
+    highestBreakBoard: "ברייק שיא",
+    highestScoreBoard: "תוצאת שיא בפריים",
+    noDataYet: "אין נתונים עדיין.",
   }
 };
 
@@ -498,6 +508,7 @@ function render(){
     case 'setup': app.innerHTML = renderSetup(); break;
     case 'scoring': app.innerHTML = renderScoring(); break;
     case 'stats': app.innerHTML = renderStats(); break;
+    case 'leaderboard': app.innerHTML = renderLeaderboard(); break;
     case 'playerDetail': app.innerHTML = renderPlayerDetail(); attachCharts(); break;
     case 'history': app.innerHTML = renderHistory(); break;
     case 'frameDetail': app.innerHTML = renderFrameDetail(); break;
@@ -578,6 +589,7 @@ function renderHome(){
       <button class="btn secondary" onclick="loadRoster();go('roster')">${t('manageRoster')}</button>
       <button class="btn secondary" onclick="loadStats();go('stats')">${t('playerStats')}</button>
       <button class="btn secondary" onclick="loadFrameHistory();go('history')">${t('frameHistory')}</button>
+      <button class="btn secondary" onclick="loadStats();go('leaderboard')">${t('leaderboard')}</button>
     </div>`;
 }
 
@@ -1069,20 +1081,25 @@ function renderStats(){
     const totalFrames = pFrames.length;
     const wins = pFrames.filter(f => (f.winnerPlayerIds||[]).includes(p.id)).length;
     const highestBreak = Math.max(0, ...pFrames.map(f => (f.highestBreaks||{})[p.id] || 0));
+    const bestScore = Math.max(0, ...pFrames.map(f => (f.finalScores||{})[p.id] || 0));
     const fg = pFrames.reduce((s,f) => s + ((f.foulPointsGiven||{})[p.id]||0), 0);
     const fr = pFrames.reduce((s,f) => s + ((f.foulPointsReceived||{})[p.id]||0), 0);
 
     return `
       <div class="card" style="cursor:pointer" onclick="openPlayerDetail('${p.id}', '${escapeHtml(p.name)}')">
-        <h3>${escapeHtml(p.name)}</h3>
+        <h3><bdi>${escapeHtml(p.name)}</bdi></h3>
         <div style="font-size:.85rem;opacity:.7;margin-top:4px">Frames: ${totalFrames} · Wins: ${wins}</div>
         <div class="stat-line" style="margin-top:8px">
           <span>${t('highestBreak')}</span>
-          <span class="tabular font-weight:600">${highestBreak}</span>
+          <span class="tabular" style="font-weight:600">${highestBreak}</span>
+        </div>
+        <div class="stat-line">
+          <span>${t('bestFrameScore')}</span>
+          <span class="tabular" style="font-weight:600">${bestScore}</span>
         </div>
         <div class="stat-line">
           <span>${t('totalFoulsGivenReceived')}</span>
-          <span class="tabular font-weight:600">${fg} / ${fr}</span>
+          <span class="tabular" style="font-weight:600">${fg} / ${fr}</span>
         </div>
       </div>`;
   }).join('');
@@ -1095,6 +1112,41 @@ function renderStats(){
     </div>
     <div class="content stack">
       ${state.statsLoading ? `<div class="empty">...</div>` : (playerStats || `<div class="empty">No stats available.</div>`)}
+    </div>`;
+}
+
+/* Leaderboard: reuses whatever loadStats() already fetched (state.players + state.summaries) */
+function renderLeaderboard(){
+  const agg = state.players.map(p => {
+    const pFrames = state.summaries.filter(f => (f.playerIds||[]).includes(p.id));
+    const highestBreak = Math.max(0, ...pFrames.map(f => (f.highestBreaks||{})[p.id] || 0));
+    const bestScore = Math.max(0, ...pFrames.map(f => (f.finalScores||{})[p.id] || 0));
+    return { id:p.id, name:p.name, highestBreak, bestScore };
+  });
+
+  const table = (rows, key, label) => `
+    <div class="card">
+      <h3 style="margin-bottom:10px;text-transform:none">${label}</h3>
+      ${rows.length ? rows.map((r,i) => `
+        <div class="stat-line" style="cursor:pointer" onclick="openPlayerDetail('${r.id}','${escapeHtml(r.name)}')">
+          <span>${i+1}. <bdi>${escapeHtml(r.name)}</bdi></span>
+          <span class="tabular" style="font-weight:600">${r[key]}</span>
+        </div>`).join('') : `<div class="empty">${t('noDataYet')}</div>`}
+    </div>`;
+
+  const byBreak = [...agg].sort((a,b) => b.highestBreak - a.highestBreak).slice(0, 10);
+  const byScore = [...agg].sort((a,b) => b.bestScore - a.bestScore).slice(0, 10);
+
+  return `
+    <div class="topbar">
+      <button class="icon-btn" onclick="go('home')">${state.lang==='he'?t('backRtl'):t('back')}</button>
+      <h1>${t('leaderboardTitle')}</h1>
+      ${renderLangButton()}
+    </div>
+    <div class="content stack">
+      ${state.statsLoading ? `<div class="empty">...</div>` : ''}
+      ${table(byBreak, 'highestBreak', t('highestBreakBoard'))}
+      ${table(byScore, 'bestScore', t('highestScoreBoard'))}
     </div>`;
 }
 
@@ -1286,12 +1338,26 @@ async function deleteFrame(id){
   }
 }
 
+/* Reads a team's score off a saved frame no matter which schema version wrote
+   it (older saves nested it under teamScores.{A,B}; newer saves it flat as
+   teamAScore/teamBScore) — falls back to summing finalScores if neither is present,
+   so a frame never shows "undefined" even if it predates a schema change. */
+function frameTeamScore(f, team){
+  const flatKey = 'team' + team + 'Score';
+  if (typeof f[flatKey] === 'number') return f[flatKey];
+  if (f.teamScores && typeof f.teamScores[team] === 'number') return f.teamScores[team];
+  const ids = f['team' + team] || [];
+  return ids.reduce((s,id) => s + ((f.finalScores||{})[id]||0), 0);
+}
+
 function renderHistory(){
   const list = state.frames.map(f => {
     const d = new Date(f.createdAt);
     const dateStr = d.toLocaleDateString([], {day:'2-digit',month:'short',year:'numeric'});
-    const teamAName = f.teamA.map(id => f.playerNames[id]||'').join(' & ');
-    const teamBName = f.teamB.map(id => f.playerNames[id]||'').join(' & ');
+    const teamAName = (f.teamA||[]).map(id => (f.playerNames||{})[id]||'').join(' & ');
+    const teamBName = (f.teamB||[]).map(id => (f.playerNames||{})[id]||'').join(' & ');
+    const teamAScore = frameTeamScore(f, 'A');
+    const teamBScore = frameTeamScore(f, 'B');
     const winner = (f.winnerTeam === 'A' ? teamAName : (f.winnerTeam === 'B' ? teamBName : 'Draw')) + (f.decidedByBlackBall ? ' 🎱' : '');
 
     return `
@@ -1299,8 +1365,8 @@ function renderHistory(){
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
           <div style="cursor:pointer;flex:1" onclick="openFrameDetail('${f.id}')">
             <div style="font-size:.75rem;opacity:.6">${dateStr} · ${modeLabel(f.mode)} (${f.maxReds||15} ${t('redsInFrame')})</div>
-            <div style="font-weight:600;margin-top:2px">${escapeHtml(teamAName)} <span class="tabular">${f.teamAScore}</span> — <span class="tabular">${f.teamBScore}</span> ${escapeHtml(teamBName)}</div>
-            <div style="font-size:.8rem;opacity:.7;margin-top:2px">${t('winner')}: ${escapeHtml(winner)}</div>
+            <div style="font-weight:600;margin-top:2px"><bdi>${escapeHtml(teamAName)}</bdi> <span class="tabular">${teamAScore}</span> — <span class="tabular">${teamBScore}</span> <bdi>${escapeHtml(teamBName)}</bdi></div>
+            <div style="font-size:.8rem;opacity:.7;margin-top:2px">${t('winner')}: <bdi>${escapeHtml(winner)}</bdi></div>
           </div>
           <button class="btn small danger" onclick="event.stopPropagation();state.confirmDeleteId='${f.id}';render()">${t('deleteFrame')}</button>
         </div>
@@ -1339,13 +1405,15 @@ function renderFrameDetail(){
 
   const d = new Date(f.createdAt);
   const dateStr = d.toLocaleDateString([], {day:'2-digit',month:'short',year:'numeric'});
-  const teamAName = f.teamA.map(id => f.playerNames[id]||'').join(' & ');
-  const teamBName = f.teamB.map(id => f.playerNames[id]||'').join(' & ');
+  const teamAName = (f.teamA||[]).map(id => (f.playerNames||{})[id]||'').join(' & ');
+  const teamBName = (f.teamB||[]).map(id => (f.playerNames||{})[id]||'').join(' & ');
+  const teamAScore = frameTeamScore(f, 'A');
+  const teamBScore = frameTeamScore(f, 'B');
   const winner = (f.winnerTeam === 'A' ? teamAName : (f.winnerTeam === 'B' ? teamBName : 'Draw')) + (f.decidedByBlackBall ? ' 🎱' : '');
 
-  const perPlayer = f.playerIds.map(id => `
+  const perPlayer = (f.playerIds||[]).map(id => `
     <div class="stat-line">
-      <span>${escapeHtml(f.playerNames[id]||'')}</span>
+      <span><bdi>${escapeHtml((f.playerNames||{})[id]||'')}</bdi></span>
       <span class="tabular" style="font-weight:600">${(f.finalScores||{})[id]||0} pts · ${t('breakLabel')} ${(f.highestBreaks||{})[id]||0}</span>
     </div>
     <div class="stat-line" style="font-size:.78rem;opacity:.7;border-bottom:none;margin-top:-4px">
@@ -1372,8 +1440,8 @@ function renderFrameDetail(){
     <div class="content stack">
       <div class="card">
         <div style="font-size:.8rem;opacity:.65">${dateStr} · ${modeLabel(f.mode)} (${f.maxReds||15} ${t('redsInFrame')})</div>
-        <h3 style="margin-top:6px;text-transform:none">${escapeHtml(teamAName)} ${f.teamAScore} — ${f.teamBScore} ${escapeHtml(teamBName)}</h3>
-        <div style="font-weight:600;margin-top:4px">${t('winner')}: ${escapeHtml(winner)}</div>
+        <h3 style="margin-top:6px;text-transform:none"><bdi>${escapeHtml(teamAName)}</bdi> ${teamAScore} — ${teamBScore} <bdi>${escapeHtml(teamBName)}</bdi></h3>
+        <div style="font-weight:600;margin-top:4px">${t('winner')}: <bdi>${escapeHtml(winner)}</bdi></div>
       </div>
       <div class="card">
         <h3 style="text-transform:none;margin-bottom:8px">${t('perPlayer')}</h3>
