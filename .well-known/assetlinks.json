@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "io.github.app_64alsterdin.twa",
+        "sha256_cert_fingerprints": ["C5:15:58:94:A0:3B:A2:06:95:1A:DE:EB:05:A8:47:5E:FF:CC:76:74:0E:7D:94:47:8E:28:46:12:2B:C7:72:37"]
+      }
+    }]
