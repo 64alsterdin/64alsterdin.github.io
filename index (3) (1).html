@@ -1,0 +1,1924 @@
+<!DOCTYPE html>
+<html lang="en" id="html-root">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1F7A44">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Snooker Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --felt:#1F7A44;
+    --felt-dark:#145A32;
+    --felt-light:#2F9457;
+    --brown:#8B5E34;
+    --brown-dark:#6B4423;
+    --brown-light:#C9A876;
+    --bg:#FFFFFF;
+    --card-border:#E3D9C6;
+    --ink:#1B1B1B;
+    --danger:#B3261E;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;}
+  button,.btn,.ball-btn,.foul-btn,.icon-btn,.chip,.metric-card{ touch-action:manipulation; }
+  body{
+    font-family:'Inter',system-ui,sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    -webkit-tap-highlight-color:transparent;
+  }
+  h1,h2,h3,.display{
+    font-family:'Lora',serif;
+    font-weight:600;
+    letter-spacing:0;
+    margin:0;
+  }
+  .tabular{ font-variant-numeric:tabular-nums; }
+  #app{ min-height:100vh; display:flex; flex-direction:column; background:var(--bg); }
+
+  /* RTL Support overrides */
+  [dir="rtl"] { text-align: right; }
+  [dir="rtl"] .topbar { flex-direction: row-reverse; }
+  [dir="rtl"] .log-time { margin-right: 0; margin-left: 6px; }
+
+  .topbar{
+    background:var(--felt);
+    background-image:linear-gradient(180deg, var(--felt-light) 0%, var(--felt) 55%, var(--felt-dark) 100%);
+    color:#FFFFFF;
+    padding:14px 12px;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    box-shadow:0 2px 8px rgba(0,0,0,.2);
+    position:sticky; top:0; z-index:20;
+    border-bottom:3px solid var(--brown);
+  }
+  .topbar h1{ font-size:1.05rem; flex:1; }
+  .icon-btn{
+    background:rgba(255,255,255,.14);
+    border:1px solid rgba(255,255,255,.3);
+    color:#FFFFFF;
+    border-radius:10px;
+    padding:8px 12px;
+    font-size:.85rem;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .icon-btn:active{ background:rgba(255,255,255,.28); }
+
+  .content{ flex:1; padding:16px; padding-bottom:32px; max-width:720px; width:100%; margin:0 auto; background:var(--bg); }
+
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    background:var(--felt); color:#FFFFFF;
+    border:2px solid var(--brown); border-radius:12px; padding:14px 18px;
+    font-family:'Lora',serif; font-weight:600; font-size:1rem; letter-spacing:0;
+    cursor:pointer; width:100%;
+    box-shadow:0 3px 0 var(--brown-dark);
+  }
+  .btn:active{ transform:translateY(2px); box-shadow:0 1px 0 var(--brown-dark); }
+  .btn.secondary{
+    background:#E9F6EE; color:var(--felt-dark);
+    border:2px solid var(--brown); box-shadow:0 3px 0 var(--brown-light);
+  }
+  .btn.secondary:active{ box-shadow:0 1px 0 var(--brown-light); }
+  .btn:disabled{ opacity:.4; cursor:default; box-shadow:none; }
+  .btn.small{ padding:10px 14px; font-size:.8rem; width:auto; }
+  .btn.danger{ background:var(--danger); border-color:#7a1a15; box-shadow:0 3px 0 #7a1a15; }
+
+  .stack{ display:flex; flex-direction:column; gap:12px; }
+  .row{ display:flex; gap:10px; }
+  .row.wrap{ flex-wrap:wrap; }
+
+  .card{
+    background:#FFFFFF; border-radius:14px; padding:16px;
+    border:1px solid var(--card-border);
+    box-shadow:0 1px 3px rgba(0,0,0,.06);
+  }
+
+  .metric-card{
+    background:#FFFFFF; border-radius:12px; padding:12px 14px;
+    border:1.5px solid var(--card-border);
+    cursor:pointer; transition:border-color .15s, background-color .15s;
+  }
+  .metric-card:active{ border-color:var(--felt); background:#f4fbf6; }
+
+  input[type=text]{
+    width:100%; padding:12px 14px; border-radius:10px;
+    border:1.5px solid var(--card-border); font-size:1rem; font-family:'Inter',sans-serif;
+    background:#fff;
+  }
+  input[type=text]:focus{ outline:2px solid var(--felt); border-color:var(--felt); }
+
+  .player-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 4px; border-bottom:1px solid var(--card-border);
+  }
+  .player-row:last-child{ border-bottom:none; }
+
+  .chip{
+    display:inline-flex; align-items:center; padding:8px 14px; border-radius:999px;
+    border:1.5px solid var(--brown); background:#fff; color:var(--ink); font-weight:600; font-size:.85rem;
+    cursor:pointer;
+  }
+  .chip.active{ background:var(--felt); color:#FFFFFF; border-color:var(--felt); }
+
+  /* Felt table */
+  .table-surface{
+    background:radial-gradient(120% 140% at 50% -10%, var(--felt-light) 0%, var(--felt) 45%, var(--felt-dark) 100%);
+    border-radius:18px;
+    padding:16px;
+    border:3px solid var(--brown);
+    box-shadow: inset 0 0 40px rgba(0,0,0,.35), 0 4px 14px rgba(0,0,0,.2);
+    color:#FFFFFF;
+  }
+  .scorecards{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-bottom:14px; }
+  .scorecard{
+    flex:1 1 120px; min-width:110px;
+    background:rgba(255,255,255,.08);
+    border:2px solid rgba(255,255,255,.25);
+    border-radius:14px; padding:10px; text-align:center; cursor:pointer;
+  }
+  .scorecard.active{
+    background:rgba(201,168,118,.25);
+    border-color:var(--brown-light);
+    box-shadow:0 0 0 3px rgba(201,168,118,.3);
+  }
+  .scorecard .name{ font-weight:600; font-size:.85rem; opacity:.9; }
+  .scorecard .score{ font-family:'Lora',serif; font-weight:700; font-size:2.1rem; line-height:1.1; }
+  .scorecard .team{ font-size:.65rem; opacity:.65; text-transform:uppercase; letter-spacing:.08em; }
+
+  .section-label{
+    font-size:.75rem; text-transform:uppercase; letter-spacing:.08em;
+    opacity:.85; margin:14px 0 8px;
+  }
+
+  .ball-row{ display:flex; justify-content:center; gap:10px; flex-wrap:wrap; }
+  .ball-btn{
+    width:56px; height:56px; border-radius:50%; border:none; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    font-family:'Lora',serif; font-weight:700; font-size:1rem;
+    box-shadow: inset -4px -6px 10px rgba(0,0,0,.35), inset 3px 4px 6px rgba(255,255,255,.35), 0 3px 6px rgba(0,0,0,.4);
+  }
+  .ball-btn:active{ transform:scale(.94); }
+  .ball-label{ text-align:center; font-size:.62rem; margin-top:4px; opacity:.85; text-transform:uppercase; }
+
+  .foul-row{ display:flex; justify-content:center; gap:8px; flex-wrap:wrap; }
+  .foul-btn{
+    background:rgba(179,38,30,.85); color:#fff; border:none; border-radius:10px;
+    padding:10px 16px; font-family:'Lora',serif; font-weight:600; font-size:.95rem; cursor:pointer;
+  }
+  .foul-btn:active{ background:#7a1a15; }
+
+  .toast-warning{
+    background:#fff3cd; color:#664d03; border:1px solid #ffe69c;
+    padding:10px 14px; border-radius:10px; font-size:.85rem; margin-top:10px;
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+  }
+
+  .log{
+    background:rgba(0,0,0,.28); border-radius:12px; padding:10px; margin-top:14px;
+    max-height:180px; overflow-y:auto; font-size:.8rem;
+  }
+  .log-entry{ padding:4px 0; border-bottom:1px solid rgba(255,255,255,.08); }
+  .log-entry:last-child{ border-bottom:none; }
+  .log-time{ opacity:.55; margin-right:6px; }
+
+  /* Modal */
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(0,0,0,.55);
+    display:flex; align-items:flex-end; justify-content:center; z-index:50;
+  }
+  .modal{
+    background:#fff; border-radius:20px 20px 0 0; padding:22px 18px 26px;
+    border-top:3px solid var(--brown);
+    width:100%; max-width:520px; max-height:88vh; overflow-y:auto;
+  }
+  @media (min-width:600px){
+    .modal-backdrop{ align-items:center; }
+    .modal{ border-radius:18px; border-top:none; border:3px solid var(--brown); }
+  }
+
+  .stat-line{ display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed var(--card-border); font-size:.9rem; }
+  .stat-line:last-child{ border-bottom:none; }
+
+  .empty{ text-align:center; padding:32px 12px; opacity:.65; font-size:.9rem; }
+  .error-box{ background:#fdecea; color:var(--danger); padding:10px 14px; border-radius:10px; font-size:.85rem; }
+
+  canvas.chart{ width:100%; height:180px; display:block; background:#fff; border:1px solid var(--card-border); border-radius:12px; }
+
+  .config-warning{
+    background:#fff3cd; border:1px solid #ffe69c; color:#664d03;
+    padding:14px; border-radius:12px; font-size:.85rem; line-height:1.5;
+  }
+  code{ background:rgba(0,0,0,.06); padding:1px 5px; border-radius:4px; font-size:.85em; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* Firebase Configuration */
+const firebaseConfig = {
+  apiKey: "AIzaSyBJtaa0D1hjvLxdfFwdLvj2_1DIA-lCfzs",
+  authDomain: "snookertracker-bd764.firebaseapp.com",
+  projectId: "snookertracker-bd764",
+  storageBucket: "snookertracker-bd764.firebasestorage.app",
+  messagingSenderId: "402261984997",
+  appId: "1:402261984997:web:783863f17c6593d39db60c",
+  measurementId: "G-WVC34YW6LV"
+};
+
+let db = null;
+let firebaseReady = false;
+try {
+  if (firebaseConfig.apiKey !== "REPLACE_ME") {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    firebaseReady = true;
+    // Cache reads/writes locally so the app keeps working with no/weak signal
+    // (e.g. at the club) and automatically syncs everything once back online.
+    db.enablePersistence().catch((err) => {
+      if (err.code === 'failed-precondition') {
+        console.warn('Offline persistence unavailable: multiple tabs open.');
+      } else if (err.code === 'unimplemented') {
+        console.warn('Offline persistence not supported in this browser.');
+      } else {
+        console.warn('Offline persistence failed to enable:', err);
+      }
+    });
+  }
+} catch (e) {
+  console.error("Firebase init failed", e);
+}
+
+/* Internationalization Dictionary (EN / HE) */
+const i18n = {
+  en: {
+    title: "Snooker Tracker",
+    startNewFrame: "▶ Start New Frame",
+    manageRoster: "Manage Player Roster",
+    playerStats: "Player Statistics",
+    frameHistory: "Frame History",
+    back: "← Back",
+    backRtl: "Back →",
+    undo: "↺ Undo",
+    finishFrame: "Finish Frame",
+    mode1v1: "1v1 Single Match",
+    mode1v2: "1v2 Handicap Match",
+    mode2v2: "2v2 Doubles Match",
+    teamA: "Team A",
+    teamB: "Team B",
+    redsInFrame: "Reds in Frame",
+    beginScoring: "Begin Scoring →",
+    beginScoringRtl: "← Begin Scoring",
+    addPlayer: "Add Player",
+    playerNamePlaceholder: "Player name...",
+    onStrike: "On strike",
+    foulBy: "Foul by",
+    pointsTo: "points to",
+    receivingOpponent: "Receiving opponent",
+    noActionsYet: "No actions yet. Tap a ball to begin.",
+    invalidSequenceWarning: "Sequence error: expected a color ball next.",
+    maxRedsExceeded: "Max reds exceeded for this frame!",
+    colorOrderWarning: "Sequence error: colors must be potted in order (Yellow → Black).",
+    dismiss: "Dismiss",
+    frameSummary: "Frame Summary",
+    drawGame: "Game Draw / Tie!",
+    blackBallDeciderNotice: "Scores are level! Play the Black Ball Game to determine the frame winner.",
+    blackBallGameHeader: "Black Ball Game",
+    potBlack: "Pot Black",
+    winner: "Winner",
+    saveAndFinish: "Save & Finish Frame",
+    rematch: "Start New Frame",
+    totalFoulsGivenReceived: "Total foul points given / received",
+    mostFoulsGivenInFrame: "Most Foul Points Given (Single Frame)",
+    mostFoulsReceivedInFrame: "Most Foul Points Received (Single Frame)",
+    highestBreak: "Highest Break",
+    bestFrameScore: "Best Frame Score",
+    scoreProgression: "Score Progression Over Time",
+    breakProgression: "Highest Break Over Time",
+    foulsReceivedProgression: "Fouls Received Over Time",
+    deleteFrame: "Delete This Frame",
+    fullActionLog: "Full action log",
+    perPlayer: "Per player",
+    confirmDelete: "Confirm Delete",
+    modeShort1v1: "1v1",
+    modeShort1v2: "1v2",
+    modeShort2v2: "2v2",
+    breakLabel: "break",
+    foulsGivenReceived: "Fouls given / received",
+    frameSaved: "Frame Saved ✓",
+    done: "Done",
+    rematchSamePlayers: "Start New Frame (same players)",
+    rematchPickPlayers: "Start New Frame (pick players)",
+    deleteFrameConfirmBody: "This permanently removes the frame and its event log. Every player's statistics will update automatically once it's gone.",
+    cancel: "Cancel",
+    leaderboard: "🏆 Leaderboard",
+    leaderboardTitle: "Leaderboard",
+    highestBreakBoard: "Highest Break",
+    highestScoreBoard: "Highest Frame Score",
+    noDataYet: "No data yet.",
+    framesPlayed: "frames",
+    rename: "Rename",
+    save: "Save",
+    duplicateNameWarning: "A player named \"{name}\" already exists.",
+    duplicateNameConfirmRename: "A player named \"{name}\" already exists. Rename anyway?",
+    addAnyway: "Add Anyway",
+    editFrame: "Edit Frame",
+    editFrameBody: "Remove any mis-tapped events below, then save. Scores, breaks and the winner will be recalculated automatically.",
+    removeEvent: "Remove",
+    saveChanges: "Save Changes",
+    cancelEdit: "Cancel",
+    editSaved: "Frame updated ✓",
+    noEventsLeft: "No events left in this frame.",
+    sessionType: "Session Type",
+    singleFrame: "Single Frame",
+    bestOf3: "Best of 3",
+    bestOf5: "Best of 5",
+    matchProgress: "Match",
+    frameOf: "Frame",
+    leads: "leads",
+    tiedAt: "tied at",
+    startNextFrame: "Start Next Frame",
+    matchComplete: "🏆 Match Complete!",
+    winsMatch: "wins the match",
+    newPersonalBest: "🏆 New Personal Best Break!",
+    centuryBreak: "💯 Century Break!",
+    milestones: "Milestones",
+  },
+  he: {
+    title: "מעקב סנוקר",
+    startNewFrame: "▶ התחל פריים חדש",
+    manageRoster: "ניהול שחקנים",
+    playerStats: "סטטיסטיקת שחקנים",
+    frameHistory: "היסטוריית פריימים",
+    back: "← חזור",
+    backRtl: "חזור →",
+    undo: "↺ ביטול",
+    finishFrame: "סים פריים",
+    mode1v1: "משחק 1 נגד 1",
+    mode1v2: "משחק 1 נגד 2",
+    mode2v2: "משחק זוגות 2 נגד 2",
+    teamA: "קבוצה א'",
+    teamB: "קבוצה ב'",
+    redsInFrame: "כדורים אדומים בפריים",
+    beginScoring: "התחל ניקוד ←",
+    beginScoringRtl: "התחל ניקוד ←",
+    addPlayer: "הוסף שחקן",
+    playerNamePlaceholder: "שם השחקן...",
+    onStrike: "בתור (חובט)",
+    foulBy: "עבירה של",
+    pointsTo: "נקודות ל-",
+    receivingOpponent: "יריב מקבל הניקוד",
+    noActionsYet: "אין פעולות עדיין. לחץ על כדור להתחלה.",
+    invalidSequenceWarning: "שגיאת רצף: מצופה כדור צבעוני כעת.",
+    maxRedsExceeded: "הגעת למספר האדומים המרבי בפריים זה!",
+    colorOrderWarning: "שגיאת רצף: יש להכניס את הצבעוניים לפי הסדר (צהוב ← שחור).",
+    dismiss: "סגור",
+    frameSummary: "סיכום פריים",
+    drawGame: "תיקו בפריים!",
+    blackBallDeciderNotice: "תוצאה שווה! שחקו משחק כדור שחור לקביעת המנצח.",
+    blackBallGameHeader: "משחק כדור שחור",
+    potBlack: "הכנס שחור",
+    winner: "מנצח",
+    saveAndFinish: "שמור וסיים פריים",
+    rematch: "התחל פריים חדש",
+    totalFoulsGivenReceived: "סה\"כ נקודות עבירה שהוענקו / התקבלו",
+    mostFoulsGivenInFrame: "שיא נקודות עבירה לחובת השחקן (בפריים בודד)",
+    mostFoulsReceivedInFrame: "שיא נקודות עבירה לזכות השחקן (בפריים בודד)",
+    highestBreak: "ברייק שיא",
+    bestFrameScore: "תוצאת שיא בפריים",
+    scoreProgression: "התקדמות תוצאה לאורך זמן",
+    breakProgression: "התקדמות ברייקים לאורך זמן",
+    foulsReceivedProgression: "עבירות שהתקבלו לאורך זמן",
+    deleteFrame: "מחק פריים זה",
+    fullActionLog: "יומן פעולות מלא",
+    perPlayer: "לפי שחקן",
+    confirmDelete: "אישור מחיקה",
+    modeShort1v1: "1 נגד 1",
+    modeShort1v2: "1 נגד 2",
+    modeShort2v2: "2 נגד 2",
+    breakLabel: "ברייק",
+    foulsGivenReceived: "עבירות שהוענקו / התקבלו",
+    frameSaved: "הפריים נשמר ✓",
+    done: "סיום",
+    rematchSamePlayers: "התחל פריים חדש (אותם שחקנים)",
+    rematchPickPlayers: "התחל פריים חדש (בחר שחקנים)",
+    deleteFrameConfirmBody: "פעולה זו מוחקת לצמיתות את הפריים ואת יומן האירועים שלו. הסטטיסטיקות של כל שחקן יתעדכנו אוטומטית.",
+    cancel: "ביטול",
+    leaderboard: "🏆 לוח מובילים",
+    leaderboardTitle: "לוח מובילים",
+    highestBreakBoard: "ברייק שיא",
+    highestScoreBoard: "תוצאת שיא בפריים",
+    noDataYet: "אין נתונים עדיין.",
+    framesPlayed: "פריימים",
+    rename: "שנה שם",
+    save: "שמור",
+    duplicateNameWarning: "כבר קיים שחקן בשם \"{name}\".",
+    duplicateNameConfirmRename: "כבר קיים שחקן בשם \"{name}\". לשנות שם בכל זאת?",
+    addAnyway: "הוסף בכל זאת",
+    editFrame: "ערוך פריים",
+    editFrameBody: "הסר כל פעולה שהוזנה בטעות ולאחר מכן שמור. הניקוד, הברייקים והמנצח יחושבו מחדש אוטומטית.",
+    removeEvent: "הסר",
+    saveChanges: "שמור שינויים",
+    cancelEdit: "ביטול",
+    editSaved: "הפריים עודכן ✓",
+    noEventsLeft: "לא נותרו פעולות בפריים זה.",
+    sessionType: "סוג המפגש",
+    singleFrame: "פריים בודד",
+    bestOf3: "מיטב 3",
+    bestOf5: "מיטב 5",
+    matchProgress: "משחק",
+    frameOf: "פריים",
+    leads: "מוביל/ה",
+    tiedAt: "תיקו ב-",
+    startNextFrame: "התחל פריים הבא",
+    matchComplete: "🏆 המשחק הסתיים!",
+    winsMatch: "מנצח/ת במשחק",
+    newPersonalBest: "🏆 שיא אישי חדש בברייק!",
+    centuryBreak: "💯 ברייק מאה!",
+    milestones: "אבני דרך",
+  }
+};
+
+const BALL_COLORS = [
+  { name:'RED', label:'Red', points:1, hex:'#D32F2F', text:'#fff' },
+  { name:'YELLOW', label:'Yellow', points:2, hex:'#FBC02D', text:'#1B1B1B' },
+  { name:'GREEN', label:'Green', points:3, hex:'#388E3C', text:'#fff' },
+  { name:'BROWN', label:'Brown', points:4, hex:'#6D4C41', text:'#fff' },
+  { name:'BLUE', label:'Blue', points:5, hex:'#1976D2', text:'#fff' },
+  { name:'PINK', label:'Pink', points:6, hex:'#EC407A', text:'#fff' },
+  { name:'BLACK', label:'Black', points:7, hex:'#212121', text:'#fff' },
+];
+
+const COLOR_SEQUENCE = ['YELLOW', 'GREEN', 'BROWN', 'BLUE', 'PINK', 'BLACK'];
+
+function computeFrameState(participantIds, events){
+  const scores = {}, highestBreaks = {}, foulGiven = {}, foulReceived = {};
+  participantIds.forEach(id => { scores[id]=0; highestBreaks[id]=0; foulGiven[id]=0; foulReceived[id]=0; });
+  let curBreakPlayer = null, curBreakVal = 0;
+
+  events.forEach(e => {
+    if (e.type === 'BALL'){
+      scores[e.playerId] = (scores[e.playerId]||0) + e.points;
+      curBreakVal = (curBreakPlayer === e.playerId) ? curBreakVal + e.points : e.points;
+      curBreakPlayer = e.playerId;
+      if (curBreakVal > (highestBreaks[e.playerId]||0)) highestBreaks[e.playerId] = curBreakVal;
+    } else if (e.type === 'FOUL'){
+      if (e.foulReceiverId){
+        scores[e.foulReceiverId] = (scores[e.foulReceiverId]||0) + e.points;
+        foulReceived[e.foulReceiverId] = (foulReceived[e.foulReceiverId]||0) + e.points;
+      }
+      foulGiven[e.playerId] = (foulGiven[e.playerId]||0) + e.points;
+      curBreakPlayer = null; curBreakVal = 0;
+    } else if (e.type === 'SWITCH_TURN'){
+      curBreakPlayer = null; curBreakVal = 0;
+    }
+  });
+  return { scores, highestBreaks, foulGiven, foulReceived };
+}
+
+/* App State */
+const state = {
+  lang: localStorage.getItem('snooker_lang') || 'en',
+  screen: 'home',
+  players: [],
+  loadingPlayers: false,
+  playersError: null,
+  pendingDuplicateName: null,
+  renamingPlayerId: null,
+
+  // match setup
+  mode: 'ONE_V_ONE',
+  maxReds: 15,
+  teamA: [],
+  teamB: [],
+  raceTo: 0, // 0 = single standalone frame, 2 = best of 3, 3 = best of 5
+  startingMatch: false,
+
+  // match session (only used when raceTo > 0)
+  currentMatch: null, // { id, framesWonA, framesWonB, frameNumber, raceTo, mode, teamA, teamB, playerNames }
+  matchJustCompleted: null,
+
+  // milestone badges shown on the saved-summary screen
+  frameBadges: [],
+
+  // scoring
+  participantIds: [],
+  playerNames: {},
+  events: [],
+  currentStrikerId: null,
+  currentOpponentReceiverId: null,
+  showSummary: false,
+  saving: false,
+  saveError: null,
+  decidedByBlackBall: false,
+  summarySaved: false,
+  validationWarning: null,
+
+  // stats
+  summaries: [],
+  statsLoading: false,
+  statsError: null,
+
+  // player detail
+  selectedPlayerId: null,
+  selectedPlayerName: null,
+  playerFrames: [],
+  playerDetailLoading: false,
+
+  // frame history
+  frames: [],
+  framesLoading: false,
+  framesError: null,
+  selectedFrame: null,
+  confirmDeleteId: null,
+  deleting: false,
+  editingFrame: false,
+  editedEvents: null,
+  savingEdit: false,
+  editError: null,
+};
+
+function t(key) {
+  return (i18n[state.lang] && i18n[state.lang][key]) || i18n['en'][key] || key;
+}
+
+function modeLabel(mode){
+  return { ONE_V_ONE:t('modeShort1v1'), ONE_V_TWO:t('modeShort1v2'), TWO_V_TWO:t('modeShort2v2') }[mode] || mode;
+}
+
+function toggleLang() {
+  state.lang = state.lang === 'en' ? 'he' : 'en';
+  localStorage.setItem('snooker_lang', state.lang);
+  document.getElementById('html-root').setAttribute('dir', state.lang === 'he' ? 'rtl' : 'ltr');
+  render();
+}
+
+function render(){
+  const app = document.getElementById('app');
+  document.getElementById('html-root').setAttribute('dir', state.lang === 'he' ? 'rtl' : 'ltr');
+  
+  if (!firebaseReady){
+    app.innerHTML = renderConfigWarning();
+    return;
+  }
+  switch(state.screen){
+    case 'home': app.innerHTML = renderHome(); break;
+    case 'roster': app.innerHTML = renderRoster(); break;
+    case 'setup': app.innerHTML = renderSetup(); break;
+    case 'scoring': app.innerHTML = renderScoring(); break;
+    case 'stats': app.innerHTML = renderStats(); break;
+    case 'leaderboard': app.innerHTML = renderLeaderboard(); break;
+    case 'playerDetail': app.innerHTML = renderPlayerDetail(); attachCharts(); break;
+    case 'history': app.innerHTML = renderHistory(); break;
+    case 'frameDetail': app.innerHTML = renderFrameDetail(); break;
+    default: app.innerHTML = renderHome();
+  }
+}
+
+function go(screen){
+  applyScreen(screen);
+  try{ history.pushState({ screen }, '', '#'+screen); } catch(e){}
+}
+
+function applyScreen(screen){
+  const leavingScoring = state.screen === 'scoring' && screen !== 'scoring';
+  state.screen = screen;
+  render();
+  if (screen === 'scoring') requestWakeLock();
+  else if (leavingScoring) releaseWakeLock();
+}
+
+window.addEventListener('popstate', (event) => {
+  const targetScreen = (event.state && event.state.screen) || 'home';
+  if (state.screen === 'scoring' && state.events.length > 0 && targetScreen !== 'scoring'){
+    const leave = confirm('Leave this frame? Any unsaved scoring progress will be lost.');
+    if (!leave){
+      try{ history.pushState({ screen:'scoring' }, '', '#scoring'); } catch(e){}
+      return;
+    }
+  }
+  applyScreen(targetScreen);
+});
+try{ history.replaceState({ screen:'home' }, '', '#home'); } catch(e){}
+
+let wakeLockSentinel = null;
+async function requestWakeLock(){
+  if (!('wakeLock' in navigator)) return;
+  try{
+    wakeLockSentinel = await navigator.wakeLock.request('screen');
+    wakeLockSentinel.addEventListener('release', () => { wakeLockSentinel = null; });
+  } catch(e){}
+}
+async function releaseWakeLock(){
+  if (wakeLockSentinel){
+    try{ await wakeLockSentinel.release(); } catch(e){}
+    wakeLockSentinel = null;
+  }
+}
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && state.screen === 'scoring' && !wakeLockSentinel){
+    await requestWakeLock();
+  }
+});
+
+function renderLangButton(){
+  return `<button class="icon-btn" onclick="toggleLang()">${state.lang === 'en' ? 'Hebrew 🇮🇱' : 'English 🇬🇧'}</button>`;
+}
+
+function renderConfigWarning(){
+  return `
+    <div class="topbar"><h1>${t('title')}</h1>${renderLangButton()}</div>
+    <div class="content">
+      <div class="config-warning">
+        <strong>Firebase isn't configured yet.</strong><br><br>
+        Open this file in a text editor and replace the <code>firebaseConfig</code> object.
+      </div>
+    </div>`;
+}
+
+/* Home Screen */
+function renderHome(){
+  return `
+    <div class="topbar">
+      <h1>${t('title')}</h1>
+      ${renderLangButton()}
+    </div>
+    <div class="content stack">
+      <button class="btn" onclick="goToSetup()">${t('startNewFrame')}</button>
+      <button class="btn secondary" onclick="loadRoster();go('roster')">${t('manageRoster')}</button>
+      <button class="btn secondary" onclick="loadStats();go('stats')">${t('playerStats')}</button>
+      <button class="btn secondary" onclick="loadFrameHistory();go('history')">${t('frameHistory')}</button>
+      <button class="btn secondary" onclick="loadStats();go('leaderboard')">${t('leaderboard')}</button>
+    </div>`;
+}
+
+/* Roster */
+async function loadRoster(){
+  state.loadingPlayers = true; state.playersError = null; render();
+  try{
+    const snap = await db.collection('players').orderBy('name').get();
+    state.players = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+  } catch(e){ state.playersError = e.message; }
+  state.loadingPlayers = false; render();
+}
+function findDuplicatePlayer(name, excludeId){
+  const norm = name.trim().toLowerCase();
+  return state.players.find(p => p.id !== excludeId && p.name.trim().toLowerCase() === norm) || null;
+}
+async function addPlayer(force){
+  const input = document.getElementById('newPlayerName');
+  const name = (input.value || '').trim();
+  if (!name) return;
+  const dup = findDuplicatePlayer(name, null);
+  if (dup && !force){
+    state.pendingDuplicateName = name;
+    render();
+    return;
+  }
+  state.pendingDuplicateName = null;
+  try{
+    await db.collection('players').add({ name, createdAt: Date.now() });
+    input.value = '';
+    await loadRoster();
+  } catch(e){ state.playersError = e.message; render(); }
+}
+function cancelAddDuplicate(){
+  state.pendingDuplicateName = null;
+  render();
+}
+async function deletePlayer(id){
+  try{
+    await db.collection('players').doc(id).delete();
+    await loadRoster();
+  } catch(e){ state.playersError = e.message; render(); }
+}
+function startRenamePlayer(id){
+  state.renamingPlayerId = id;
+  render();
+  setTimeout(() => {
+    const el = document.getElementById('renameInput_' + id);
+    if (el) { el.focus(); el.select(); }
+  }, 0);
+}
+function cancelRenamePlayer(){
+  state.renamingPlayerId = null;
+  render();
+}
+async function saveRenamePlayer(id){
+  const input = document.getElementById('renameInput_' + id);
+  const name = (input.value || '').trim();
+  if (!name) return;
+  const dup = findDuplicatePlayer(name, id);
+  if (dup && !confirm(t('duplicateNameConfirmRename').replace('{name}', dup.name))) return;
+  try{
+    await db.collection('players').doc(id).update({ name });
+    state.renamingPlayerId = null;
+    await loadRoster();
+  } catch(e){ state.playersError = e.message; render(); }
+}
+function renderRoster(){
+  const list = state.players.map(p => {
+    if (state.renamingPlayerId === p.id){
+      return `
+        <div class="player-row">
+          <input type="text" id="renameInput_${p.id}" value="${escapeHtml(p.name)}" style="flex:1;margin-right:8px" onkeydown="if(event.key==='Enter')saveRenamePlayer('${p.id}');if(event.key==='Escape')cancelRenamePlayer()">
+          <div class="row" style="gap:6px">
+            <button class="btn small" onclick="saveRenamePlayer('${p.id}')">${t('save')}</button>
+            <button class="btn small secondary" onclick="cancelRenamePlayer()">${t('cancel')}</button>
+          </div>
+        </div>`;
+    }
+    return `
+    <div class="player-row">
+      <span style="font-weight:600"><bdi>${escapeHtml(p.name)}</bdi></span>
+      <div class="row" style="gap:6px">
+        <button class="btn small secondary" onclick="startRenamePlayer('${p.id}')">${t('rename')}</button>
+        <button class="btn small danger" onclick="deletePlayer('${p.id}')">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+  return `
+    <div class="topbar">
+      <button class="icon-btn" onclick="go('home')">${state.lang==='he'?t('backRtl'):t('back')}</button>
+      <h1>${t('manageRoster')}</h1>
+      ${renderLangButton()}
+    </div>
+    <div class="content stack">
+      <div class="card stack">
+        <input type="text" id="newPlayerName" placeholder="${t('playerNamePlaceholder')}" onkeydown="if(event.key==='Enter')addPlayer()">
+        <button class="btn" onclick="addPlayer()">${t('addPlayer')}</button>
+        ${state.pendingDuplicateName ? `
+          <div class="toast-warning">
+            <span>⚠️ ${t('duplicateNameWarning').replace('{name}', escapeHtml(state.pendingDuplicateName))}</span>
+          </div>
+          <div class="row">
+            <button class="btn secondary" style="width:auto" onclick="cancelAddDuplicate()">${t('cancel')}</button>
+            <button class="btn small" style="width:auto" onclick="addPlayer(true)">${t('addAnyway')}</button>
+          </div>` : ''}
+      </div>
+      ${state.playersError ? `<div class="error-box">${escapeHtml(state.playersError)}</div>`:''}
+      <div class="card">${state.loadingPlayers ? `<div class="empty">...</div>` : (list || `<div class="empty">No players yet.</div>`)}</div>
+    </div>`;
+}
+
+/* Match Setup */
+function teamMax(mode, team){
+  if (mode === 'ONE_V_ONE') return 1;
+  if (mode === 'ONE_V_TWO') return team === 'A' ? 1 : 2;
+  return 2;
+}
+function setMode(m){
+  state.mode = m; state.teamA = []; state.teamB = []; render();
+}
+function setMaxReds(r){
+  state.maxReds = r; render();
+}
+function setRaceTo(r){
+  state.raceTo = r; render();
+}
+function togglePlayerPick(id, team){
+  const list = team === 'A' ? state.teamA : state.teamB;
+  const other = team === 'A' ? state.teamB : state.teamA;
+  const max = teamMax(state.mode, team);
+  if (list.includes(id)){
+    list.splice(list.indexOf(id), 1);
+  } else if (!other.includes(id) && list.length < max){
+    list.push(id);
+  }
+  render();
+}
+async function ensurePlayersLoaded(){
+  if (state.players.length === 0 && !state.loadingPlayers){
+    await loadRoster();
+  }
+}
+function beginFrame(){
+  state.participantIds = [...state.teamA, ...state.teamB];
+  state.playerNames = {};
+  state.players.forEach(p => { if (state.participantIds.includes(p.id)) state.playerNames[p.id] = p.name; });
+  state.events = [];
+  state.currentStrikerId = state.teamA[0];
+  state.currentOpponentReceiverId = state.teamB[0];
+  state.showSummary = false;
+  state.summarySaved = false;
+  state.saveError = null;
+  state.decidedByBlackBall = false;
+  state.validationWarning = null;
+  state.frameBadges = [];
+  go('scoring');
+}
+
+/* Creates the Firestore 'matches' doc backing a best-of-3/5 session. Called
+   once, right before the first frame of the session begins. */
+async function startMatchSession(){
+  const playerNames = {};
+  [...state.teamA, ...state.teamB].forEach(id => {
+    const p = state.players.find(pl => pl.id === id);
+    if (p) playerNames[id] = p.name;
+  });
+  const doc = {
+    mode: state.mode,
+    raceTo: state.raceTo,
+    teamA: state.teamA,
+    teamB: state.teamB,
+    playerNames,
+    framesWonA: 0,
+    framesWonB: 0,
+    frameIds: [],
+    status: 'IN_PROGRESS',
+    createdAt: Date.now()
+  };
+  const ref = await db.collection('matches').add(doc);
+  state.currentMatch = {
+    id: ref.id, raceTo: state.raceTo, mode: state.mode,
+    teamA: [...state.teamA], teamB: [...state.teamB], playerNames,
+    framesWonA: 0, framesWonB: 0, frameIds: [], frameNumber: 1
+  };
+  state.matchJustCompleted = null;
+}
+
+function startFrame(){
+  const aMax = teamMax(state.mode, 'A'), bMax = teamMax(state.mode, 'B');
+  if (state.teamA.length !== aMax || state.teamB.length !== bMax) return;
+  if (state.raceTo > 0){
+    state.startingMatch = true; render();
+    startMatchSession()
+      .then(() => { state.startingMatch = false; beginFrame(); })
+      .catch(e => { state.startingMatch = false; state.playersError = e.message; render(); });
+  } else {
+    state.currentMatch = null;
+    state.matchJustCompleted = null;
+    beginFrame();
+  }
+}
+
+/* Records this frame's result against the in-progress match, checks whether
+   the race target has been reached, and updates the match doc either way. */
+async function advanceMatchAfterFrame(frameId, winnerTeam){
+  const m = state.currentMatch;
+  if (!m) return;
+  if (winnerTeam === 'A') m.framesWonA++;
+  else if (winnerTeam === 'B') m.framesWonB++;
+  m.frameIds = [...(m.frameIds||[]), frameId];
+  const complete = m.framesWonA >= m.raceTo || m.framesWonB >= m.raceTo;
+  const matchWinnerTeam = complete ? (m.framesWonA > m.framesWonB ? 'A' : 'B') : null;
+  try{
+    await db.collection('matches').doc(m.id).update({
+      framesWonA: m.framesWonA,
+      framesWonB: m.framesWonB,
+      frameIds: m.frameIds,
+      status: complete ? 'COMPLETE' : 'IN_PROGRESS',
+      winnerTeam: matchWinnerTeam,
+      completedAt: complete ? Date.now() : null
+    });
+  } catch(e){ /* the frame itself is already saved; a match-doc hiccup shouldn't block the UI */ }
+
+  if (complete){
+    state.matchJustCompleted = { winnerTeam: matchWinnerTeam, framesWonA: m.framesWonA, framesWonB: m.framesWonB, raceTo: m.raceTo };
+  } else {
+    state.matchJustCompleted = null;
+    m.frameNumber = (m.frameNumber||1) + 1;
+  }
+}
+
+/* Continues an in-progress match straight into its next frame, same teams. */
+function continueMatchNextFrame(){
+  state.showSummary = false;
+  state.summarySaved = false;
+  beginFrame();
+}
+
+/* Starts a brand new match with the same teams and race-to setting. */
+function matchRematch(){
+  state.showSummary = false;
+  state.summarySaved = false;
+  state.matchJustCompleted = null;
+  state.startingMatch = true; render();
+  startMatchSession()
+    .then(() => { state.startingMatch = false; beginFrame(); })
+    .catch(e => { state.startingMatch = false; state.playersError = e.message; render(); });
+}
+
+/* Resets any match-session selections so "Start New Frame" from the home
+   screen always begins from a clean slate rather than resuming stale state. */
+function goToSetup(){
+  state.currentMatch = null;
+  state.matchJustCompleted = null;
+  state.raceTo = 0;
+  go('setup');
+}
+function renderSetup(){
+  if (state.players.length === 0 && !state.loadingPlayers) ensurePlayersLoaded();
+  const aMax = teamMax(state.mode, 'A'), bMax = teamMax(state.mode, 'B');
+  const canStart = state.teamA.length === aMax && state.teamB.length === bMax;
+
+  const teamCol = (team, ids, max) => `
+    <div class="card stack" style="flex:1">
+      <h3>${team==='A'?t('teamA'):t('teamB')} (${ids.length}/${max})</h3>
+      ${state.players.map(p => {
+        const pickedThis = ids.includes(p.id);
+        const pickedOther = (team==='A'?state.teamB:state.teamA).includes(p.id);
+        return `<span class="chip ${pickedThis?'active':''}" style="${pickedOther?'opacity:.3;pointer-events:none':''}" onclick="togglePlayerPick('${p.id}','${team}')">${escapeHtml(p.name)}</span>`;
+      }).join('') || '<div class="empty">No players</div>'}
+    </div>`;
+
+  return `
+    <div class="topbar">
+      <button class="icon-btn" onclick="go('home')">${state.lang==='he'?t('backRtl'):t('back')}</button>
+      <h1>${t('startNewFrame')}</h1>
+      ${renderLangButton()}
+    </div>
+    <div class="content stack">
+      <div class="row wrap">
+        <button class="chip ${state.mode==='ONE_V_ONE'?'active':''}" onclick="setMode('ONE_V_ONE')">${t('mode1v1')}</button>
+        <button class="chip ${state.mode==='ONE_V_TWO'?'active':''}" onclick="setMode('ONE_V_TWO')">${t('mode1v2')}</button>
+        <button class="chip ${state.mode==='TWO_V_TWO'?'active':''}" onclick="setMode('TWO_V_TWO')">${t('mode2v2')}</button>
+      </div>
+
+      <div class="card stack">
+        <div class="section-label">${t('redsInFrame')}</div>
+        <div class="row">
+          ${[6, 10, 15].map(r => `<button class="chip ${state.maxReds===r?'active':''}" onclick="setMaxReds(${r})">${r} ${t('redsInFrame')}</button>`).join('')}
+        </div>
+      </div>
+
+      <div class="card stack">
+        <div class="section-label">${t('sessionType')}</div>
+        <div class="row wrap">
+          <button class="chip ${state.raceTo===0?'active':''}" onclick="setRaceTo(0)">${t('singleFrame')}</button>
+          <button class="chip ${state.raceTo===2?'active':''}" onclick="setRaceTo(2)">${t('bestOf3')}</button>
+          <button class="chip ${state.raceTo===3?'active':''}" onclick="setRaceTo(3)">${t('bestOf5')}</button>
+        </div>
+      </div>
+
+      <div class="row wrap">${teamCol('A', state.teamA, aMax)}${teamCol('B', state.teamB, bMax)}</div>
+      <button class="btn" ${canStart && !state.startingMatch?'':'disabled'} onclick="startFrame()">${state.startingMatch ? '…' : (state.lang==='he'?t('beginScoringRtl'):t('beginScoring'))}</button>
+    </div>`;
+}
+
+/* Scoring Engine & Sequence Validation */
+function opposingTeam(playerId){
+  if (state.teamA.includes(playerId)) return state.teamB;
+  return state.teamA;
+}
+function selectStriker(id){
+  if (id === state.currentStrikerId) return;
+  state.currentStrikerId = id;
+  const opposing = opposingTeam(id);
+  if (!opposing.includes(state.currentOpponentReceiverId)) state.currentOpponentReceiverId = opposing[0];
+  state.events.push({ type:'SWITCH_TURN', playerId:id, playerName: state.playerNames[id]||'', timestamp: Date.now() });
+  state.validationWarning = null;
+  render();
+}
+function selectReceiver(id){
+  state.currentOpponentReceiverId = id;
+  render();
+}
+
+function potBall(ballName){
+  const ball = BALL_COLORS.find(b => b.name === ballName);
+  state.validationWarning = null;
+
+  // Count potted reds so far
+  const redsPotted = state.events.filter(e => e.type === 'BALL' && e.ball === 'RED').length;
+
+  if (ballName === 'RED') {
+    if (redsPotted >= state.maxReds) {
+      state.validationWarning = t('maxRedsExceeded');
+    }
+  } else {
+    // If reds are still on table or break is active
+    let lastEvent = null;
+    for (let i = state.events.length - 1; i >= 0; i--) {
+      if (state.events[i].type === 'BALL') { lastEvent = state.events[i]; break; }
+      if (state.events[i].type === 'SWITCH_TURN' || state.events[i].type === 'FOUL') break;
+    }
+
+    // When clearing colors after all reds are potted:
+    if (redsPotted >= state.maxReds) {
+      // Find the index of the final red, then look at any colors potted since.
+      // Real snooker rule: right after the last red, the player may pot ANY
+      // colour of their choice (it's not respotted) — only from the NEXT
+      // colour onward must the strict yellow->black order be followed,
+      // skipping whichever colour was already used as that free pot.
+      let lastRedIndex = -1, redCount = 0;
+      for (let i = 0; i < state.events.length; i++) {
+        const e = state.events[i];
+        if (e.type === 'BALL' && e.ball === 'RED') {
+          redCount++;
+          if (redCount === state.maxReds) { lastRedIndex = i; break; }
+        }
+      }
+      const colorsAfterLastRed = state.events.slice(lastRedIndex + 1)
+        .filter(e => e.type === 'BALL' && e.ball !== 'RED')
+        .map(e => e.ball);
+
+      if (colorsAfterLastRed.length === 0) {
+        // This is the free colour after the last red — any colour is valid.
+      } else {
+        const freeColor = colorsAfterLastRed[0];
+        const subsequentColors = colorsAfterLastRed.slice(1);
+        const remainingSequence = COLOR_SEQUENCE.filter(c => c !== freeColor);
+        const nextExpectedColor = remainingSequence.find(c => !subsequentColors.includes(c));
+        if (nextExpectedColor && ballName !== nextExpectedColor) {
+          state.validationWarning = t('colorOrderWarning');
+        }
+      }
+    } else if (lastEvent && lastEvent.ball !== 'RED' && lastEvent.playerId === state.currentStrikerId) {
+      // Potting color after another color without a red in between
+      state.validationWarning = t('invalidSequenceWarning');
+    }
+  }
+
+  state.events.push({
+    type:'BALL',
+    playerId: state.currentStrikerId,
+    playerName: state.playerNames[state.currentStrikerId]||'',
+    ball: ball.name,
+    points: ball.points,
+    timestamp: Date.now()
+  });
+  render();
+}
+
+function recordFoul(value){
+  state.validationWarning = null;
+  const receiver = state.currentOpponentReceiverId;
+  state.events.push({
+    type:'FOUL',
+    playerId: state.currentStrikerId,
+    playerName: state.playerNames[state.currentStrikerId]||'',
+    points: value,
+    foulReceiverId: receiver,
+    foulReceiverName: state.playerNames[receiver]||'',
+    timestamp: Date.now()
+  });
+  render();
+}
+
+function potBlackBallDecider(){
+  state.events.push({
+    type:'BALL',
+    playerId: state.currentStrikerId,
+    playerName: state.playerNames[state.currentStrikerId]||'',
+    ball:'BLACK',
+    points:7,
+    blackBallDecider:true,
+    timestamp: Date.now()
+  });
+  state.decidedByBlackBall = true;
+  render();
+}
+function recordBlackBallDeciderFoul(value){
+  const receiver = state.currentOpponentReceiverId;
+  state.events.push({
+    type:'FOUL',
+    playerId: state.currentStrikerId,
+    playerName: state.playerNames[state.currentStrikerId]||'',
+    points: value,
+    foulReceiverId: receiver,
+    foulReceiverName: state.playerNames[receiver]||'',
+    blackBallDecider:true,
+    timestamp: Date.now()
+  });
+  state.decidedByBlackBall = true;
+  render();
+}
+
+function undoLast(){
+  if (state.events.length) state.events.pop();
+  state.validationWarning = null;
+  render();
+}
+function requestFinish(){
+  state.showSummary = true;
+  render();
+}
+function dismissSummary(){
+  state.showSummary = false;
+  render();
+}
+
+function renderMatchProgressLine(){
+  const m = state.currentMatch;
+  if (!m) return '';
+  const bestOfLabel = m.raceTo === 2 ? t('bestOf3') : t('bestOf5');
+  const teamAName = m.teamA.map(id => m.playerNames[id]||'').join(' & ');
+  const teamBName = m.teamB.map(id => m.playerNames[id]||'').join(' & ');
+  let statusText;
+  if (m.framesWonA === m.framesWonB){
+    statusText = `${t('tiedAt')} ${m.framesWonA}-${m.framesWonB}`;
+  } else {
+    const leaderName = m.framesWonA > m.framesWonB ? teamAName : teamBName;
+    statusText = `${escapeHtml(leaderName)} ${t('leads')} ${Math.max(m.framesWonA,m.framesWonB)}-${Math.min(m.framesWonA,m.framesWonB)}`;
+  }
+  return `${t('matchProgress')}: ${bestOfLabel} · ${t('frameOf')} ${m.frameNumber||1} · ${statusText}`;
+}
+
+function renderScoring(){
+  const fs = computeFrameState(state.participantIds, state.events);
+  const { scores } = fs;
+  const teamAScore = state.teamA.reduce((s,id) => s + (scores[id]||0), 0);
+  const teamBScore = state.teamB.reduce((s,id) => s + (scores[id]||0), 0);
+
+  const scorecards = state.participantIds.map(id => {
+    const isA = state.teamA.includes(id);
+    const isStriker = id === state.currentStrikerId;
+    return `
+      <div class="scorecard ${isStriker?'active':''}" onclick="selectStriker('${id}')">
+        <div class="team">${isA?t('teamA'):t('teamB')}</div>
+        <div class="name">${escapeHtml(state.playerNames[id]||'')}</div>
+        <div class="score tabular">${scores[id]||0}</div>
+      </div>`;
+  }).join('');
+
+  const balls = BALL_COLORS.map(b => `
+    <button class="ball-btn" style="background:${b.hex};color:${b.text}" onclick="potBall('${b.name}')">${b.points}</button>
+  `).join('');
+
+  const foulButtons = [4,5,6,7].map(v => `<button class="foul-btn" onclick="recordFoul(${v})">Foul ${v}</button>`).join('');
+
+  const logHtml = state.events.slice().reverse().map(e => {
+    let text = '';
+    if (e.type === 'BALL') text = `${e.playerName} potted ${e.ball[0]+e.ball.slice(1).toLowerCase()} (+${e.points})`;
+    else if (e.type === 'FOUL') text = `${e.playerName} FOUL — ${e.foulReceiverName} +${e.points}`;
+    else if (e.type === 'SWITCH_TURN') text = `▶ ${e.playerName} on strike`;
+    if (e.blackBallDecider) text += ' 🎱 Black Ball Game';
+    const tVal = new Date(e.timestamp);
+    const time = tVal.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    return `<div class="log-entry"><span class="log-time">${time}</span>${text}</div>`;
+  }).join('') || `<div class="log-entry" style="opacity:.6">${t('noActionsYet')}</div>`;
+
+  return `
+    <div class="topbar">
+      <button class="icon-btn" onclick="go('setup')">${state.lang==='he'?t('backRtl'):t('back')}</button>
+      <h1>${modeLabel(state.mode)} (${state.maxReds} ${t('redsInFrame')})</h1>
+      <button class="icon-btn" onclick="undoLast()">${t('undo')}</button>
+    </div>
+    <div class="content">
+      <div class="table-surface">
+        ${state.currentMatch ? `<div class="section-label" style="text-align:center;color:#fff">${renderMatchProgressLine()}</div>` : ''}
+        <div class="scorecards">${scorecards}</div>
+        
+        ${state.validationWarning ? `
+          <div class="toast-warning">
+            <span>⚠️ ${escapeHtml(state.validationWarning)}</span>
+            <button class="btn small" style="width:auto;padding:4px 8px" onclick="undoLast()">${t('undo')}</button>
+          </div>` : ''}
+
+        <div class="section-label">${t('onStrike')}: ${escapeHtml(state.playerNames[state.currentStrikerId]||'')}</div>
+        <div class="ball-row">${balls}</div>
+
+        <div class="section-label">${t('foulBy')} ${escapeHtml(state.playerNames[state.currentStrikerId]||'')} → ${t('pointsTo')} ${escapeHtml(state.playerNames[state.currentOpponentReceiverId]||'')}</div>
+        <div class="foul-row">${foulButtons}</div>
+
+        ${opposingTeam(state.currentStrikerId).length > 1 ? `
+          <div class="section-label">${t('receivingOpponent')}</div>
+          <div class="row wrap">
+            ${opposingTeam(state.currentStrikerId).map(id => `
+              <span class="chip ${state.currentOpponentReceiverId===id?'active':''}" onclick="selectReceiver('${id}')">
+                ${escapeHtml(state.playerNames[id]||'')}
+              </span>`).join('')}
+          </div>` : ''}
+
+        <div class="log">${logHtml}</div>
+        <div style="margin-top:14px">
+          <button class="btn" onclick="requestFinish()">${t('finishFrame')}</button>
+        </div>
+      </div>
+    </div>
+    ${state.showSummary ? renderSummaryModal(teamAScore, teamBScore, fs) : ''}`;
+}
+
+function renderSummaryModal(teamAScore, teamBScore, fs){
+  const scores = fs.scores;
+  const isDraw = teamAScore === teamBScore;
+  let winnerText = '';
+  if (isDraw) winnerText = t('drawGame');
+  else winnerText = `${t('winner')}: ${teamAScore > teamBScore ? t('teamA') : t('teamB')}`;
+
+  const perPlayer = state.participantIds.map(id => `
+    <div class="stat-line">
+      <span>${escapeHtml(state.playerNames[id]||'')} (${state.teamA.includes(id)?'A':'B'})</span>
+      <span class="tabular" style="font-weight:600">${scores[id]||0} pts · ${t('breakLabel')} ${fs.highestBreaks[id]||0}</span>
+    </div>
+    <div class="stat-line" style="font-size:.78rem;opacity:.7;border-bottom:none;margin-top:-4px">
+      <span>${t('foulsGivenReceived')}: ${fs.foulGiven[id]||0} / ${fs.foulReceived[id]||0}</span>
+    </div>`).join('');
+
+  // ---- Already saved: offer a rematch instead of the score-entry controls ----
+  if (state.summarySaved){
+    const rematchLabel = state.mode === 'ONE_V_ONE' ? t('rematchSamePlayers') : t('rematchPickPlayers');
+
+    const badgesHtml = (state.frameBadges && state.frameBadges.length) ? `
+      <div class="card" style="background:#fff3cd;border-color:#ffe69c;margin:12px 0">
+        <strong>${t('milestones')}</strong>
+        ${state.frameBadges.map(b => `
+          <div class="stat-line" style="border-bottom:none">
+            <span>${b.label} <bdi>${escapeHtml(b.playerName)}</bdi></span>
+            <span class="tabular" style="font-weight:600">${b.value}</span>
+          </div>`).join('')}
+      </div>` : '';
+
+    // Match session in progress (not yet complete): push straight into the next frame.
+    if (state.currentMatch && !state.matchJustCompleted){
+      return `
+        <div class="modal-backdrop" onclick="if(event.target===this) finishSummaryDone()">
+          <div class="modal">
+            <h2>${t('frameSaved')}</h2>
+            <p style="font-weight:600;margin:8px 0 0">${winnerText}</p>
+            <p class="tabular" style="font-size:1.1rem;margin:6px 0 16px">Team A: ${teamAScore} — Team B: ${teamBScore}</p>
+            ${perPlayer}
+            ${badgesHtml}
+            <p style="font-weight:600;margin:14px 0 0">${renderMatchProgressLine()}</p>
+            <div class="row" style="margin-top:18px">
+              <button class="btn secondary" onclick="finishSummaryDone()">${t('done')}</button>
+              <button class="btn" onclick="continueMatchNextFrame()">${t('startNextFrame')}</button>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // Match just reached its race target.
+    if (state.matchJustCompleted){
+      const mc = state.matchJustCompleted;
+      const teamAName2 = state.teamA.map(id => state.playerNames[id]||'').join(' & ');
+      const teamBName2 = state.teamB.map(id => state.playerNames[id]||'').join(' & ');
+      const winnerName = mc.winnerTeam === 'A' ? teamAName2 : teamBName2;
+      return `
+        <div class="modal-backdrop" onclick="if(event.target===this) finishSummaryDone()">
+          <div class="modal">
+            <h2>${t('matchComplete')}</h2>
+            <p style="font-weight:600;margin:8px 0 0"><bdi>${escapeHtml(winnerName)}</bdi> ${t('winsMatch')} ${mc.framesWonA}-${mc.framesWonB}</p>
+            <p style="font-weight:600;margin:8px 0 0">${winnerText}</p>
+            <p class="tabular" style="font-size:1.1rem;margin:6px 0 16px">Team A: ${teamAScore} — Team B: ${teamBScore}</p>
+            ${perPlayer}
+            ${badgesHtml}
+            <div class="row" style="margin-top:18px">
+              <button class="btn secondary" onclick="finishSummaryDone()">${t('done')}</button>
+              <button class="btn" onclick="matchRematch()">${rematchLabel}</button>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // Plain standalone frame (no match session).
+    return `
+      <div class="modal-backdrop" onclick="if(event.target===this) finishSummaryDone()">
+        <div class="modal">
+          <h2>${t('frameSaved')}</h2>
+          <p style="font-weight:600;margin:8px 0 0">${winnerText}</p>
+          <p class="tabular" style="font-size:1.1rem;margin:6px 0 16px">Team A: ${teamAScore} — Team B: ${teamBScore}</p>
+          ${perPlayer}
+          ${badgesHtml}
+          <div class="row" style="margin-top:18px">
+            <button class="btn secondary" onclick="finishSummaryDone()">${t('done')}</button>
+            <button class="btn" onclick="rematch()">${rematchLabel}</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="modal-backdrop" onclick="if(event.target===this && !${state.saving}) dismissSummary()">
+      <div class="modal">
+        <h2>${t('frameSummary')}</h2>
+        <p style="font-weight:600;margin:8px 0 0">${winnerText}</p>
+        <p class="tabular" style="font-size:1.1rem;margin:6px 0 16px">Team A: ${teamAScore} — Team B: ${teamBScore}</p>
+        ${perPlayer}
+
+        ${isDraw ? `
+          <div class="card" style="background:#fff3cd;border-color:#ffe69c;color:#664d03;margin:14px 0">
+            <strong>🎱 ${t('blackBallGameHeader')}</strong>
+            <p style="font-size:.85rem;margin:4px 0 10px">${t('blackBallDeciderNotice')}</p>
+            <div class="row wrap">
+              ${state.participantIds.map(id => `
+                <span class="chip ${state.currentStrikerId===id?'active':''}" onclick="selectStriker('${id}')">
+                  ${escapeHtml(state.playerNames[id]||'')}
+                </span>`).join('')}
+            </div>
+            <div style="text-align:center;margin:12px 0 6px">
+              <button class="ball-btn" style="background:#212121;color:#fff;width:60px;height:60px;font-size:1.1rem" onclick="potBlackBallDecider()">${t('potBlack')}</button>
+            </div>
+            <div class="foul-row">
+              ${[4,5,6,7].map(v => `<button class="foul-btn" onclick="recordBlackBallDeciderFoul(${v})">Foul ${v}</button>`).join('')}
+            </div>
+          </div>` : ''}
+
+        ${state.saveError ? `<div class="error-box" style="margin-top:12px">${escapeHtml(state.saveError)}</div>` : ''}
+
+        <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px">
+          <button class="btn" ${state.saving?'disabled':''} onclick="saveFrame()">${state.saving ? '…' : t('saveAndFinish')}</button>
+          <button class="btn secondary" ${state.saving?'disabled':''} onclick="dismissSummary()">${t('dismiss')}</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* Builds the storable frame fields (scores/breaks/winner/etc) from a set of
+   participants/teams/events. Shared by both the initial save and later edits
+   so a frame recalculates identically either way. */
+function buildFrameDocFields(participantIds, teamA, teamB, events){
+  const { scores, highestBreaks, foulGiven, foulReceived } = computeFrameState(participantIds, events);
+  const teamAScore = teamA.reduce((s,id) => s + (scores[id]||0), 0);
+  const teamBScore = teamB.reduce((s,id) => s + (scores[id]||0), 0);
+
+  let winnerTeam = 'DRAW';
+  if (teamAScore > teamBScore) winnerTeam = 'A';
+  else if (teamBScore > teamAScore) winnerTeam = 'B';
+
+  const winnerPlayerIds = winnerTeam === 'A' ? teamA : (winnerTeam === 'B' ? teamB : []);
+  const decidedByBlackBall = events.some(e => e.blackBallDecider);
+
+  return {
+    finalScores: scores,
+    highestBreaks,
+    foulPointsGiven: foulGiven,
+    foulPointsReceived: foulReceived,
+    teamAScore,
+    teamBScore,
+    winnerTeam,
+    winnerPlayerIds,
+    decidedByBlackBall,
+    events
+  };
+}
+
+/* Compares this frame's fresh highestBreaks against each player's best break
+   from all their PRIOR frames, to surface "new personal best" / "century"
+   milestones on the saved-summary screen. */
+async function computeFrameBadges(participantIds, highestBreaks){
+  const badges = [];
+  try{
+    for (const id of participantIds){
+      const brk = highestBreaks[id] || 0;
+      if (brk <= 0) continue;
+      const snap = await db.collection('frames').where('playerIds','array-contains', id).get();
+      const priorBest = Math.max(0, ...snap.docs.map(d => (d.data().highestBreaks||{})[id] || 0));
+      const name = state.playerNames[id] || '';
+      if (brk >= 100) badges.push({ playerName: name, label: t('centuryBreak'), value: brk });
+      if (brk > priorBest) badges.push({ playerName: name, label: t('newPersonalBest'), value: brk });
+    }
+  } catch(e){ /* badges are a nice-to-have; ignore fetch errors */ }
+  return badges;
+}
+
+async function saveFrame(){
+  state.saving = true; state.saveError = null; render();
+  const fields = buildFrameDocFields(state.participantIds, state.teamA, state.teamB, state.events);
+
+  const doc = {
+    mode: state.mode,
+    maxReds: state.maxReds,
+    playerIds: state.participantIds,
+    playerNames: state.playerNames,
+    teamA: state.teamA,
+    teamB: state.teamB,
+    ...fields,
+    createdAt: Date.now()
+  };
+  if (state.currentMatch) doc.matchId = state.currentMatch.id;
+
+  try{
+    state.frameBadges = await computeFrameBadges(state.participantIds, fields.highestBreaks);
+    const ref = await db.collection('frames').add(doc);
+    if (state.currentMatch){
+      await advanceMatchAfterFrame(ref.id, fields.winnerTeam);
+    }
+    state.summarySaved = true;
+    state.saving = false;
+    render();
+  } catch(e){
+    state.saveError = e.message;
+    state.saving = false;
+    render();
+  }
+}
+
+function finishSummaryDone(){
+  state.showSummary = false;
+  state.summarySaved = false;
+  state.currentMatch = null;
+  state.matchJustCompleted = null;
+  state.raceTo = 0;
+  go('home');
+}
+
+/* Called from the "Start New Frame" button after a frame is saved.
+   1v1: replay with the exact same two players, straight back into scoring.
+   1v2 / 2v2: keep the mode, but clear team picks — teams often get
+   reshuffled between frames — and go back to Match Setup to repick. */
+function rematch(){
+  state.showSummary = false;
+  state.summarySaved = false;
+  if (state.mode === 'ONE_V_ONE'){
+    beginFrame();
+  } else {
+    state.teamA = [];
+    state.teamB = [];
+    go('setup');
+  }
+}
+
+/* Statistics */
+async function loadStats(){
+  state.statsLoading = true; state.statsError = null; render();
+  try{
+    const snap = await db.collection('players').orderBy('name').get();
+    state.players = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    const fSnap = await db.collection('frames').get();
+    state.summaries = fSnap.docs.map(d => ({ id:d.id, ...d.data() }));
+  } catch(e){ state.statsError = e.message; }
+  state.statsLoading = false; render();
+}
+
+function openPlayerDetail(id, name){
+  state.selectedPlayerId = id;
+  state.selectedPlayerName = name;
+  loadPlayerFrames(id);
+}
+
+function renderStats(){
+  const playerStats = state.players.map(p => {
+    const pFrames = state.summaries.filter(f => (f.playerIds||[]).includes(p.id));
+    const totalFrames = pFrames.length;
+    const wins = pFrames.filter(f => (f.winnerPlayerIds||[]).includes(p.id)).length;
+    const highestBreak = Math.max(0, ...pFrames.map(f => (f.highestBreaks||{})[p.id] || 0));
+    const bestScore = Math.max(0, ...pFrames.map(f => (f.finalScores||{})[p.id] || 0));
+    const fg = pFrames.reduce((s,f) => s + ((f.foulPointsGiven||{})[p.id]||0), 0);
+    const fr = pFrames.reduce((s,f) => s + ((f.foulPointsReceived||{})[p.id]||0), 0);
+
+    return `
+      <div class="card" style="cursor:pointer" onclick="openPlayerDetail('${p.id}', '${escapeHtml(p.name)}')">
+        <h3><bdi>${escapeHtml(p.name)}</bdi></h3>
+        <div style="font-size:.85rem;opacity:.7;margin-top:4px">Frames: ${totalFrames} · Wins: ${wins}</div>
+        <div class="stat-line" style="margin-top:8px">
+          <span>${t('highestBreak')}</span>
+          <span class="tabular" style="font-weight:600">${highestBreak}</span>
+        </div>
+        <div class="stat-line">
+          <span>${t('bestFrameScore')}</span>
+          <span class="tabular" style="font-weight:600">${bestScore}</span>
+        </div>
+        <div class="stat-line">
+          <span>${t('totalFoulsGivenReceived')}</span>
+          <span class="tabular" style="font-weight:600">${fg} / ${fr}</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="topbar">
+      <button class="icon-btn" onclick="go('home')">${state.lang==='he'?t('backRtl'):t('back')}</button>
+      <h1>${t('playerStats')}</h1>
+      ${renderLangButton()}
+    </div>
+    <div class="content stack">
+      ${state.statsLoading ? `<div class="empty">...</div>` : (playerStats || `<div class="empty">No stats available.</div>`)}
+    </div>`;
+}
+
+/* Leaderboard: reuses whatever loadStats() already fetched (state.players + state.summaries) */
+function renderLeaderboard(){
+  const agg = state.players.map(p => {
+    const pFrames = state.summaries.filter(f => (f.playerIds||[]).includes(p.id));
+    const highestBreak = Math.max(0, ...pFrames.map(f => (f.highestBreaks||{})[p.id] || 0));
+    const bestScore = Math.max(0, ...pFrames.map(f => (f.finalScores||{})[p.id] || 0));
+    return { id:p.id, name:p.name, highestBreak, bestScore, framesPlayed: pFrames.length };
+  });
+
+  const table = (rows, key, label) => `
+    <div class="card">
+      <h3 style="margin-bottom:10px;text-transform:none">${label}</h3>
+      ${rows.length ? rows.map((r,i) => `
+        <div class="stat-line" style="cursor:pointer" onclick="openPlayerDetail('${r.id}','${escapeHtml(r.name)}')">
+          <span>${i+1}. <bdi>${escapeHtml(r.name)}</bdi> <span style="opacity:.55;font-size:.78rem">(${r.framesPlayed} ${t('framesPlayed')})</span></span>
+          <span class="tabular" style="font-weight:600">${r[key]}</span>
+        </div>`).join('') : `<div class="empty">${t('noDataYet')}</div>`}
+    </div>`;
+
+  const byBreak = [...agg].sort((a,b) => b.highestBreak - a.highestBreak).slice(0, 10);
+  const byScore = [...agg].sort((a,b) => b.bestScore - a.bestScore).slice(0, 10);
+
+  return `
+    <div class="topbar">
+      <button class="icon-btn" onclick="go('home')">${state.lang==='he'?t('backRtl'):t('back')}</button>
+      <h1>${t('leaderboardTitle')}</h1>
+      ${renderLangButton()}
+    </div>
+    <div class="content stack">
+      ${state.statsLoading ? `<div class="empty">...</div>` : ''}
+      ${table(byBreak, 'highestBreak', t('highestBreakBoard'))}
+      ${table(byScore, 'bestScore', t('highestScoreBoard'))}
+    </div>`;
+}
+
+async function loadPlayerFrames(id){
+  state.playerDetailLoading = true; render();
+  try{
+    const snap = await db.collection('frames').where('playerIds','array-contains', id).get();
+    state.playerFrames = snap.docs.map(d => ({ id:d.id, ...d.data() })).sort((a,b) => a.createdAt - b.createdAt);
+  } catch(e){ state.statsError = e.message; }
+  state.playerDetailLoading = false;
+  go('playerDetail');
+}
+
+function openFrameDetail(id){
+  state.selectedFrame = state.playerFrames.find(f => f.id === id) || state.frames.find(f => f.id === id);
+  if (!state.selectedFrame){
+    db.collection('frames').doc(id).get().then(doc => {
+      if (doc.exists){
+        state.selectedFrame = { id: doc.id, ...doc.data() };
+        go('frameDetail');
+      }
+    });
+  } else {
+    go('frameDetail');
+  }
+}
+
+function renderPlayerDetail(){
+  const id = state.selectedPlayerId;
+  const frames = state.playerFrames;
+  const scores = frames.map(f => (f.finalScores||{})[id] || 0);
+  const breaks = frames.map(f => (f.highestBreaks||{})[id] || 0);
+  const foulsGivenSeries = frames.map(f => (f.foulPointsGiven||{})[id] || 0);
+  const foulsReceivedSeries = frames.map(f => (f.foulPointsReceived||{})[id] || 0);
+
+  let maxBreakFrame = null, maxScoreFrame = null, maxFgFrame = null, maxFrFrame = null;
+  let highestBreak = 0, bestScore = 0, maxFg = 0, maxFr = 0;
+
+  frames.forEach(f => {
+    const b = (f.highestBreaks||{})[id]||0;
+    const s = (f.finalScores||{})[id]||0;
+    const fg = (f.foulPointsGiven||{})[id]||0;
+    const fr = (f.foulPointsReceived||{})[id]||0;
+
+    if (b >= highestBreak) { highestBreak = b; maxBreakFrame = f.id; }
+    if (s >= bestScore) { bestScore = s; maxScoreFrame = f.id; }
+    if (fg >= maxFg) { maxFg = fg; maxFgFrame = f.id; }
+    if (fr >= maxFr) { maxFr = fr; maxFrFrame = f.id; }
+  });
+
+  return `
+    <div class="topbar">
+      <button class="icon-btn" onclick="go('stats')">${state.lang==='he'?t('backRtl'):t('back')}</button>
+      <h1>${escapeHtml(state.selectedPlayerName||'Player')}</h1>
+      ${renderLangButton()}
+    </div>
+    <div class="content stack">
+      <div class="row wrap">
+        <div class="metric-card" style="flex:1" onclick="${maxBreakFrame?`openFrameDetail('${maxBreakFrame}')`:''}">
+          <div style="font-size:.75rem;opacity:.7">${t('highestBreak')}</div>
+          <div style="font-size:1.5rem;font-weight:700" class="tabular">${highestBreak}</div>
+        </div>
+        <div class="metric-card" style="flex:1" onclick="${maxScoreFrame?`openFrameDetail('${maxScoreFrame}')`:''}">
+          <div style="font-size:.75rem;opacity:.7">${t('bestFrameScore')}</div>
+          <div style="font-size:1.5rem;font-weight:700" class="tabular">${bestScore}</div>
+        </div>
+      </div>
+
+      <div class="row wrap">
+        <div class="metric-card" style="flex:1" onclick="${maxFgFrame?`openFrameDetail('${maxFgFrame}')`:''}">
+          <div style="font-size:.75rem;opacity:.7">${t('mostFoulsGivenInFrame')}</div>
+          <div style="font-size:1.5rem;font-weight:700" class="tabular">${maxFg}</div>
+        </div>
+        <div class="metric-card" style="flex:1" onclick="${maxFrFrame?`openFrameDetail('${maxFrFrame}')`:''}">
+          <div style="font-size:.75rem;opacity:.7">${t('mostFoulsReceivedInFrame')}</div>
+          <div style="font-size:1.5rem;font-weight:700" class="tabular">${maxFr}</div>
+        </div>
+      </div>
+
+      <div class="card stack">
+        <h3>${t('scoreProgression')}</h3>
+        <canvas id="scoreChart" class="chart"></canvas>
+      </div>
+
+      <div class="card stack">
+        <h3>${t('breakProgression')}</h3>
+        <canvas id="breakChart" class="chart"></canvas>
+      </div>
+
+      <div class="card stack">
+        <h3>${t('foulsReceivedProgression')}</h3>
+        <canvas id="foulsChart" class="chart"></canvas>
+      </div>
+    </div>`;
+}
+
+function attachCharts(){
+  setTimeout(() => {
+    const id = state.selectedPlayerId;
+    const frames = state.playerFrames;
+    const scores = frames.map(f => (f.finalScores||{})[id] || 0);
+    const breaks = frames.map(f => (f.highestBreaks||{})[id] || 0);
+    const foulsReceived = frames.map(f => (f.foulPointsReceived||{})[id] || 0);
+
+    drawChart('scoreChart', scores, '#1F7A44');
+    drawChart('breakChart', breaks, '#8B5E34');
+    drawChart('foulsChart', foulsReceived, '#1976D2');
+  }, 50);
+}
+
+function drawChart(canvasId, values, color){
+  const cvs = document.getElementById(canvasId);
+  if (!cvs) return;
+  const ctx = cvs.getContext('2d');
+  const rect = cvs.getBoundingClientRect();
+  cvs.width = rect.width * window.devicePixelRatio;
+  cvs.height = rect.height * window.devicePixelRatio;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+  ctx.clearRect(0, 0, rect.width, rect.height);
+  if (!values.length) return;
+
+  const padX = 24, padTop = 24, padBottom = 20;
+  const w = rect.width - padX*2, h = rect.height - padTop - padBottom;
+  const maxV = Math.max(1, ...values), minV = Math.min(0, ...values);
+  const range = Math.max(1, maxV - minV);
+  const stepX = values.length > 1 ? w / (values.length - 1) : 0;
+  const pt = i => [padX + stepX*i, padTop + h - ((values[i]-minV)/range)*h];
+
+  ctx.strokeStyle = '#e6e0cc';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padX, padTop+h); ctx.lineTo(padX+w, padTop+h);
+  ctx.stroke();
+
+  function drawLabels(){
+    ctx.font = '600 10px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#1B1B1B';
+    values.forEach((v,i) => {
+      const [x,y] = pt(i);
+      ctx.fillText(String(v), x, Math.max(12, y - 8));
+    });
+  }
+
+  if (values.length === 1){
+    const [x,y] = pt(0);
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(x,y,4,0,7); ctx.fill();
+    drawLabels();
+    return;
+  }
+
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.lineJoin='round'; ctx.lineCap='round';
+  ctx.beginPath();
+  values.forEach((v,i)=>{ const [x,y]=pt(i); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+  ctx.stroke();
+
+  ctx.fillStyle = color;
+  values.forEach((v,i)=>{ const [x,y]=pt(i); ctx.beginPath(); ctx.arc(x,y,3.5,0,7); ctx.fill(); });
+  drawLabels();
+}
+
+/* History */
+async function loadFrameHistory(){
+  state.framesLoading = true; state.framesError = null; render();
+  try{
+    const snap = await db.collection('frames').orderBy('createdAt','desc').get();
+    state.frames = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+  } catch(e){ state.framesError = e.message; }
+  state.framesLoading = false; render();
+}
+
+async function deleteFrame(id){
+  state.deleting = true; render();
+  try{
+    await db.collection('frames').doc(id).delete();
+    state.confirmDeleteId = null;
+    state.deleting = false;
+    if (state.screen === 'frameDetail' && state.selectedFrame && state.selectedFrame.id === id){
+      state.selectedFrame = null;
+      go('history');
+    }
+    await loadFrameHistory();
+  } catch(e){
+    state.deleting = false;
+    state.framesError = e.message;
+    render();
+  }
+}
+
+function openEditFrame(){
+  const f = state.selectedFrame;
+  if (!f) return;
+  state.editingFrame = true;
+  state.editedEvents = (f.events||[]).map(e => ({...e}));
+  state.editError = null;
+  render();
+}
+function cancelEditFrame(){
+  state.editingFrame = false;
+  state.editedEvents = null;
+  state.editError = null;
+  render();
+}
+function removeEditedEvent(index){
+  if (!state.editedEvents) return;
+  state.editedEvents.splice(index, 1);
+  render();
+}
+async function saveFrameEdit(){
+  const f = state.selectedFrame;
+  if (!f || !state.editedEvents) return;
+  state.savingEdit = true; state.editError = null; render();
+  try{
+    const fields = buildFrameDocFields(f.playerIds||[], f.teamA||[], f.teamB||[], state.editedEvents);
+    await db.collection('frames').doc(f.id).update(fields);
+    state.selectedFrame = { ...f, ...fields };
+    state.editingFrame = false;
+    state.editedEvents = null;
+    state.savingEdit = false;
+    render();
+    await loadFrameHistory();
+  } catch(e){
+    state.editError = e.message;
+    state.savingEdit = false;
+    render();
+  }
+}
+
+/* Reads a team's score off a saved frame no matter which schema version wrote
+   it (older saves nested it under teamScores.{A,B}; newer saves it flat as
+   teamAScore/teamBScore) — falls back to summing finalScores if neither is present,
+   so a frame never shows "undefined" even if it predates a schema change. */
+function frameTeamScore(f, team){
+  const flatKey = 'team' + team + 'Score';
+  if (typeof f[flatKey] === 'number') return f[flatKey];
+  if (f.teamScores && typeof f.teamScores[team] === 'number') return f.teamScores[team];
+  const ids = f['team' + team] || [];
+  return ids.reduce((s,id) => s + ((f.finalScores||{})[id]||0), 0);
+}
+
+function renderHistory(){
+  const list = state.frames.map(f => {
+    const d = new Date(f.createdAt);
+    const dateStr = d.toLocaleDateString([], {day:'2-digit',month:'short',year:'numeric'});
+    const teamAName = (f.teamA||[]).map(id => (f.playerNames||{})[id]||'').join(' & ');
+    const teamBName = (f.teamB||[]).map(id => (f.playerNames||{})[id]||'').join(' & ');
+    const teamAScore = frameTeamScore(f, 'A');
+    const teamBScore = frameTeamScore(f, 'B');
+    const winner = (f.winnerTeam === 'A' ? teamAName : (f.winnerTeam === 'B' ? teamBName : 'Draw')) + (f.decidedByBlackBall ? ' 🎱' : '');
+
+    return `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div style="cursor:pointer;flex:1" onclick="openFrameDetail('${f.id}')">
+            <div style="font-size:.75rem;opacity:.6">${dateStr} · ${modeLabel(f.mode)} (${f.maxReds||15} ${t('redsInFrame')})</div>
+            <div style="font-weight:600;margin-top:2px"><bdi>${escapeHtml(teamAName)}</bdi> <span class="tabular">${teamAScore}</span> — <span class="tabular">${teamBScore}</span> <bdi>${escapeHtml(teamBName)}</bdi></div>
+            <div style="font-size:.8rem;opacity:.7;margin-top:2px">${t('winner')}: <bdi>${escapeHtml(winner)}</bdi></div>
+          </div>
+          <button class="btn small danger" onclick="event.stopPropagation();state.confirmDeleteId='${f.id}';render()">${t('deleteFrame')}</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="topbar">
+      <button class="icon-btn" onclick="go('home')">${state.lang==='he'?t('backRtl'):t('back')}</button>
+      <h1>${t('frameHistory')}</h1>
+      ${renderLangButton()}
+    </div>
+    <div class="content stack">
+      ${state.framesLoading ? `<div class="empty">...</div>` : (list || `<div class="empty">No frames recorded yet.</div>`)}
+    </div>
+    ${state.confirmDeleteId ? renderDeleteConfirm() : ''}`;
+}
+
+function renderDeleteConfirm(){
+  return `
+    <div class="modal-backdrop" onclick="if(event.target===this && !${state.deleting}){state.confirmDeleteId=null;render();}">
+      <div class="modal">
+        <h2>${t('confirmDelete')}</h2>
+        <p style="margin:12px 0">${t('deleteFrameConfirmBody')}</p>
+        <div style="display:flex;gap:10px;margin-top:16px">
+          <button class="btn secondary" ${state.deleting?'disabled':''} onclick="state.confirmDeleteId=null;render()">${t('cancel')}</button>
+          <button class="btn danger" ${state.deleting?'disabled':''} onclick="deleteFrame('${state.confirmDeleteId}')">${state.deleting?'…':t('deleteFrame')}</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderFrameDetail(){
+  const f = state.selectedFrame;
+  if (!f) return `<div class="content"><div class="empty">Frame not found.</div></div>`;
+
+  const d = new Date(f.createdAt);
+  const dateStr = d.toLocaleDateString([], {day:'2-digit',month:'short',year:'numeric'});
+  const teamAName = (f.teamA||[]).map(id => (f.playerNames||{})[id]||'').join(' & ');
+  const teamBName = (f.teamB||[]).map(id => (f.playerNames||{})[id]||'').join(' & ');
+  const teamAScore = frameTeamScore(f, 'A');
+  const teamBScore = frameTeamScore(f, 'B');
+  const winner = (f.winnerTeam === 'A' ? teamAName : (f.winnerTeam === 'B' ? teamBName : 'Draw')) + (f.decidedByBlackBall ? ' 🎱' : '');
+
+  const perPlayer = (f.playerIds||[]).map(id => `
+    <div class="stat-line">
+      <span><bdi>${escapeHtml((f.playerNames||{})[id]||'')}</bdi></span>
+      <span class="tabular" style="font-weight:600">${(f.finalScores||{})[id]||0} pts · ${t('breakLabel')} ${(f.highestBreaks||{})[id]||0}</span>
+    </div>
+    <div class="stat-line" style="font-size:.78rem;opacity:.7;border-bottom:none;margin-top:-4px">
+      <span>${t('foulsGivenReceived')}: ${(f.foulPointsGiven||{})[id]||0} / ${(f.foulPointsReceived||{})[id]||0}</span>
+    </div>`).join('');
+
+  const eventText = e => {
+    let text = '';
+    if (e.type === 'BALL') text = `${e.playerName} potted ${e.ball[0]+e.ball.slice(1).toLowerCase()} (+${e.points})`;
+    else if (e.type === 'FOUL') text = `${e.playerName} FOUL — ${e.foulReceiverName} +${e.points}`;
+    else if (e.type === 'SWITCH_TURN') text = `▶ ${e.playerName} on strike`;
+    if (e.blackBallDecider) text += ' 🎱 Black Ball Game';
+    return text;
+  };
+
+  if (state.editingFrame){
+    const editList = (state.editedEvents||[]).map((e,i) => {
+      const tVal = new Date(e.timestamp);
+      const time = tVal.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      return `<div class="log-entry" style="color:var(--ink);display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span><span class="log-time">${time}</span>${eventText(e)}</span>
+        <button class="btn small danger" style="width:auto;padding:4px 10px" onclick="removeEditedEvent(${i})">${t('removeEvent')}</button>
+      </div>`;
+    }).reverse().join('') || `<div class="empty">${t('noEventsLeft')}</div>`;
+
+    return `
+      <div class="topbar">
+        <button class="icon-btn" onclick="cancelEditFrame()">${state.lang==='he'?t('backRtl'):t('back')}</button>
+        <h1>${t('editFrame')}</h1>
+        ${renderLangButton()}
+      </div>
+      <div class="content stack">
+        <div class="card">
+          <p style="margin:0;font-size:.85rem;opacity:.75">${t('editFrameBody')}</p>
+        </div>
+        ${state.editError ? `<div class="error-box">${escapeHtml(state.editError)}</div>` : ''}
+        <div class="card" style="max-height:340px;overflow-y:auto">${editList}</div>
+        <div class="row">
+          <button class="btn secondary" ${state.savingEdit?'disabled':''} onclick="cancelEditFrame()">${t('cancelEdit')}</button>
+          <button class="btn" ${state.savingEdit?'disabled':''} onclick="saveFrameEdit()">${state.savingEdit?'…':t('saveChanges')}</button>
+        </div>
+      </div>`;
+  }
+
+  const logHtml = (f.events||[]).slice().reverse().map(e => {
+    const tVal = new Date(e.timestamp);
+    const time = tVal.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    return `<div class="log-entry" style="color:var(--ink)"><span class="log-time">${time}</span>${eventText(e)}</div>`;
+  }).join('') || `<div class="empty">No event log saved for this frame.</div>`;
+
+  return `
+    <div class="topbar">
+      <button class="icon-btn" onclick="go('history')">${state.lang==='he'?t('backRtl'):t('back')}</button>
+      <h1>Frame Detail</h1>
+      ${renderLangButton()}
+    </div>
+    <div class="content stack">
+      <div class="card">
+        <div style="font-size:.8rem;opacity:.65">${dateStr} · ${modeLabel(f.mode)} (${f.maxReds||15} ${t('redsInFrame')})</div>
+        <h3 style="margin-top:6px;text-transform:none"><bdi>${escapeHtml(teamAName)}</bdi> ${teamAScore} — ${teamBScore} <bdi>${escapeHtml(teamBName)}</bdi></h3>
+        <div style="font-weight:600;margin-top:4px">${t('winner')}: <bdi>${escapeHtml(winner)}</bdi></div>
+      </div>
+      <div class="card">
+        <h3 style="text-transform:none;margin-bottom:8px">${t('perPlayer')}</h3>
+        ${perPlayer}
+      </div>
+      <div class="section-label" style="color:var(--ink)">${t('fullActionLog')}</div>
+      <div class="card" style="max-height:260px;overflow-y:auto">${logHtml}</div>
+      <button class="btn secondary" onclick="openEditFrame()">${t('editFrame')}</button>
+      <button class="btn danger" onclick="state.confirmDeleteId='${f.id}';render()">${t('deleteFrame')}</button>
+    </div>
+    ${state.confirmDeleteId ? renderDeleteConfirm() : ''}`;
+}
+
+function escapeHtml(str) {
+  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* Registers the service worker (sw.js, alongside this file) so Chrome/Android
+   can cache the app shell and offer the "Install app" prompt. Silently
+   no-ops if the file is opened as file:// or the browser lacks support —
+   the app works the same either way, this just enables installability. */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch((err) => {
+      console.warn('Service worker registration failed:', err);
+    });
+  });
+}
+
+/* Initial render */
+render();
+</script>
+</body>
+</html>
