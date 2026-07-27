@@ -354,6 +354,16 @@ const i18n = {
     newPersonalBest: "🏆 New Personal Best Break!",
     centuryBreak: "💯 Century Break!",
     milestones: "Milestones",
+    frameMatchHistory: "Frame / Match History",
+    draw: "Draw",
+    matchInProgress: "In Progress (unfinished)",
+    noFramesInMatch: "No frames recorded yet.",
+    headToHead: "Head-to-Head",
+    vsOpponent: "vs",
+    selectOpponent: "Select an opponent…",
+    framesRecord: "Frames",
+    matchesRecord: "Matches",
+    noSharedHistory: "No shared frames yet.",
   },
   he: {
     title: "מעקב סנוקר",
@@ -447,6 +457,16 @@ const i18n = {
     newPersonalBest: "🏆 שיא אישי חדש בברייק!",
     centuryBreak: "💯 ברייק מאה!",
     milestones: "אבני דרך",
+    frameMatchHistory: "היסטוריית פריימים / משחקים",
+    draw: "תיקו",
+    matchInProgress: "בעיצומו (לא הושלם)",
+    noFramesInMatch: "עדיין לא נרשמו פריימים.",
+    headToHead: "עימות ראש בראש",
+    vsOpponent: "נגד",
+    selectOpponent: "בחר יריב…",
+    framesRecord: "פריימים",
+    matchesRecord: "משחקים",
+    noSharedHistory: "עדיין אין היסטוריה משותפת.",
   }
 };
 
@@ -535,9 +555,12 @@ const state = {
   selectedPlayerName: null,
   playerFrames: [],
   playerDetailLoading: false,
+  headToHeadOpponentId: null,
 
   // frame history
   frames: [],
+  matches: [],
+  expandedMatchId: null,
   framesLoading: false,
   framesError: null,
   selectedFrame: null,
@@ -658,7 +681,7 @@ function renderHome(){
       <button class="btn" onclick="goToSetup()">${t('startNewFrame')}</button>
       <button class="btn secondary" onclick="loadRoster();go('roster')">${t('manageRoster')}</button>
       <button class="btn secondary" onclick="loadStats();go('stats')">${t('playerStats')}</button>
-      <button class="btn secondary" onclick="loadFrameHistory();go('history')">${t('frameHistory')}</button>
+      <button class="btn secondary" onclick="loadFrameHistory();go('history')">${t('frameMatchHistory')}</button>
       <button class="btn secondary" onclick="loadStats();go('leaderboard')">${t('leaderboard')}</button>
     </div>`;
 }
@@ -779,13 +802,13 @@ function teamMax(mode, team){
   return 2;
 }
 function setMode(m){
-  state.mode = m; state.teamA = []; state.teamB = []; render();
+  state.mode = m; state.teamA = []; state.teamB = []; state.playersError = null; render();
 }
 function setMaxReds(r){
   state.maxReds = r; render();
 }
 function setRaceTo(r){
-  state.raceTo = r; render();
+  state.raceTo = r; state.playersError = null; render();
 }
 function togglePlayerPick(id, team){
   const list = team === 'A' ? state.teamA : state.teamB;
@@ -851,6 +874,7 @@ async function startMatchSession(){
 function startFrame(){
   const aMax = teamMax(state.mode, 'A'), bMax = teamMax(state.mode, 'B');
   if (state.teamA.length !== aMax || state.teamB.length !== bMax) return;
+  state.playersError = null;
   if (state.raceTo > 0){
     state.startingMatch = true; render();
     startMatchSession()
@@ -963,6 +987,7 @@ function renderSetup(){
       </div>
 
       <div class="row wrap">${teamCol('A', state.teamA, aMax)}${teamCol('B', state.teamB, bMax)}</div>
+      ${state.playersError ? `<div class="error-box">${escapeHtml(state.playersError)}</div>` : ''}
       <button class="btn" ${canStart && !state.startingMatch?'':'disabled'} onclick="startFrame()">${state.startingMatch ? '…' : (state.lang==='he'?t('beginScoringRtl'):t('beginScoring'))}</button>
     </div>`;
 }
@@ -1406,7 +1431,20 @@ async function saveFrame(){
   }
 }
 
-function finishSummaryDone(){
+async function finishSummaryDone(){
+  const m = state.currentMatch;
+  if (m && !state.matchJustCompleted){
+    // Session ended before reaching the race target — resolve it now rather
+    // than leaving it stuck "IN_PROGRESS" forever with no way to look back on it.
+    const winnerTeam = m.framesWonA === m.framesWonB ? 'DRAW' : (m.framesWonA > m.framesWonB ? 'A' : 'B');
+    try{
+      await db.collection('matches').doc(m.id).update({
+        status: 'COMPLETE',
+        winnerTeam,
+        completedAt: Date.now()
+      });
+    } catch(e){ /* best-effort — don't block the user from leaving over this */ }
+  }
   state.showSummary = false;
   state.summarySaved = false;
   state.currentMatch = null;
@@ -1440,13 +1478,58 @@ async function loadStats(){
     const fSnap = await db.collection('frames').get();
     state.summaries = fSnap.docs.map(d => ({ id:d.id, ...d.data() }));
   } catch(e){ state.statsError = e.message; }
+  try{
+    const mSnap = await db.collection('matches').get();
+    state.matches = mSnap.docs.map(d => ({ id:d.id, ...d.data() }));
+  } catch(e){ console.warn('Could not load matches:', e.message); }
   state.statsLoading = false; render();
 }
 
 function openPlayerDetail(id, name){
   state.selectedPlayerId = id;
   state.selectedPlayerName = name;
+  state.headToHeadOpponentId = null;
   loadPlayerFrames(id);
+}
+function setHeadToHeadOpponent(id){
+  state.headToHeadOpponentId = id || null;
+  render();
+}
+/* Tallies frames and match wins between two specific players, counting only
+   frames/matches where they were on opposing teams (teammates don't count). */
+function headToHeadStats(idA, idB){
+  let frameWinsA = 0, frameWinsB = 0, frameDraws = 0, framesTotal = 0;
+  state.summaries.forEach(f => {
+    const teamA = f.teamA || [], teamB = f.teamB || [];
+    const aInA = teamA.includes(idA), aInB = teamB.includes(idA);
+    const bInA = teamA.includes(idB), bInB = teamB.includes(idB);
+    if ((aInA && bInB) || (aInB && bInA)){
+      framesTotal++;
+      if (f.winnerTeam === 'DRAW') frameDraws++;
+      else {
+        const aTeam = aInA ? 'A' : 'B';
+        if (f.winnerTeam === aTeam) frameWinsA++; else frameWinsB++;
+      }
+    }
+  });
+
+  let matchWinsA = 0, matchWinsB = 0, matchDraws = 0, matchesTotal = 0;
+  (state.matches || []).forEach(m => {
+    if (m.status !== 'COMPLETE') return;
+    const teamA = m.teamA || [], teamB = m.teamB || [];
+    const aInA = teamA.includes(idA), aInB = teamB.includes(idA);
+    const bInA = teamA.includes(idB), bInB = teamB.includes(idB);
+    if ((aInA && bInB) || (aInB && bInA)){
+      matchesTotal++;
+      if (m.winnerTeam === 'DRAW') matchDraws++;
+      else {
+        const aTeam = aInA ? 'A' : 'B';
+        if (m.winnerTeam === aTeam) matchWinsA++; else matchWinsB++;
+      }
+    }
+  });
+
+  return { framesTotal, frameWinsA, frameWinsB, frameDraws, matchesTotal, matchWinsA, matchWinsB, matchDraws };
 }
 
 function renderStats(){
@@ -1571,6 +1654,28 @@ function renderPlayerDetail(){
     if (fr >= maxFr) { maxFr = fr; maxFrFrame = f.id; }
   });
 
+  const opponents = state.players.filter(p => p.id !== id);
+  const h2hId = state.headToHeadOpponentId;
+  let h2hCard = '';
+  if (h2hId){
+    const h2h = headToHeadStats(id, h2hId);
+    const oppName = (state.players.find(p => p.id === h2hId)||{}).name || '';
+    h2hCard = h2h.framesTotal === 0 && h2h.matchesTotal === 0 ? `
+      <div class="empty" style="margin-top:10px">${t('noSharedHistory')}</div>` : `
+      <div style="margin-top:10px">
+        ${h2h.framesTotal > 0 ? `
+          <div class="stat-line">
+            <span>${t('framesRecord')}</span>
+            <span class="tabular" style="font-weight:600">${h2h.frameWinsA} — ${h2h.frameWinsB}${h2h.frameDraws?` (${h2h.frameDraws} ${t('draw')})`:''}</span>
+          </div>` : ''}
+        ${h2h.matchesTotal > 0 ? `
+          <div class="stat-line">
+            <span>${t('matchesRecord')}</span>
+            <span class="tabular" style="font-weight:600">${h2h.matchWinsA} — ${h2h.matchWinsB}${h2h.matchDraws?` (${h2h.matchDraws} ${t('draw')})`:''}</span>
+          </div>` : ''}
+      </div>`;
+  }
+
   return `
     <div class="topbar">
       <button class="icon-btn" onclick="go('stats')">${state.lang==='he'?t('backRtl'):t('back')}</button>
@@ -1598,6 +1703,15 @@ function renderPlayerDetail(){
           <div style="font-size:.75rem;opacity:.7">${t('mostFoulsReceivedInFrame')}</div>
           <div style="font-size:1.5rem;font-weight:700" class="tabular">${maxFr}</div>
         </div>
+      </div>
+
+      <div class="card stack">
+        <h3 style="text-transform:none">${t('headToHead')}</h3>
+        <select onchange="setHeadToHeadOpponent(this.value)" style="padding:10px;border-radius:8px;border:1px solid var(--line)">
+          <option value="">${t('selectOpponent')}</option>
+          ${opponents.map(p => `<option value="${p.id}" ${h2hId===p.id?'selected':''}><bdi>${escapeHtml(p.name)}</bdi></option>`).join('')}
+        </select>
+        ${h2hCard}
       </div>
 
       <div class="card stack">
@@ -1691,7 +1805,18 @@ async function loadFrameHistory(){
     const snap = await db.collection('frames').orderBy('createdAt','desc').get();
     state.frames = snap.docs.map(d => ({ id:d.id, ...d.data() }));
   } catch(e){ state.framesError = e.message; }
+  try{
+    const msnap = await db.collection('matches').orderBy('createdAt','desc').get();
+    state.matches = msnap.docs.map(d => ({ id:d.id, ...d.data() }));
+  } catch(e){ /* matches are a newer, optional collection — don't let a permissions
+                 hiccup on it wipe out the frame history that already worked */
+    console.warn('Could not load matches:', e.message);
+  }
   state.framesLoading = false; render();
+}
+function toggleMatchExpand(id){
+  state.expandedMatchId = state.expandedMatchId === id ? null : id;
+  render();
 }
 
 async function deleteFrame(id){
@@ -1763,33 +1888,84 @@ function frameTeamScore(f, team){
   return ids.reduce((s,id) => s + ((f.finalScores||{})[id]||0), 0);
 }
 
-function renderHistory(){
-  const list = state.frames.map(f => {
-    const d = new Date(f.createdAt);
-    const dateStr = d.toLocaleDateString([], {day:'2-digit',month:'short',year:'numeric'});
-    const teamAName = (f.teamA||[]).map(id => (f.playerNames||{})[id]||'').join(' & ');
-    const teamBName = (f.teamB||[]).map(id => (f.playerNames||{})[id]||'').join(' & ');
-    const teamAScore = frameTeamScore(f, 'A');
-    const teamBScore = frameTeamScore(f, 'B');
-    const winner = (f.winnerTeam === 'A' ? teamAName : (f.winnerTeam === 'B' ? teamBName : 'Draw')) + (f.decidedByBlackBall ? ' 🎱' : '');
+function renderFrameHistoryCard(f){
+  const d = new Date(f.createdAt);
+  const dateStr = d.toLocaleDateString([], {day:'2-digit',month:'short',year:'numeric'});
+  const teamAName = (f.teamA||[]).map(id => (f.playerNames||{})[id]||'').join(' & ');
+  const teamBName = (f.teamB||[]).map(id => (f.playerNames||{})[id]||'').join(' & ');
+  const teamAScore = frameTeamScore(f, 'A');
+  const teamBScore = frameTeamScore(f, 'B');
+  const winner = (f.winnerTeam === 'A' ? teamAName : (f.winnerTeam === 'B' ? teamBName : t('draw'))) + (f.decidedByBlackBall ? ' 🎱' : '');
 
-    return `
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-          <div style="cursor:pointer;flex:1" onclick="openFrameDetail('${f.id}')">
-            <div style="font-size:.75rem;opacity:.6">${dateStr} · ${modeLabel(f.mode)} (${f.maxReds||15} ${t('redsInFrame')})</div>
-            <div style="font-weight:600;margin-top:2px"><bdi>${escapeHtml(teamAName)}</bdi> <span class="tabular">${teamAScore}</span> — <span class="tabular">${teamBScore}</span> <bdi>${escapeHtml(teamBName)}</bdi></div>
-            <div style="font-size:.8rem;opacity:.7;margin-top:2px">${t('winner')}: <bdi>${escapeHtml(winner)}</bdi></div>
-          </div>
-          <button class="btn small danger" onclick="event.stopPropagation();state.confirmDeleteId='${f.id}';render()">${t('deleteFrame')}</button>
+  return `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div style="cursor:pointer;flex:1" onclick="openFrameDetail('${f.id}')">
+          <div style="font-size:.75rem;opacity:.6">${dateStr} · ${modeLabel(f.mode)} (${f.maxReds||15} ${t('redsInFrame')})</div>
+          <div style="font-weight:600;margin-top:2px"><bdi>${escapeHtml(teamAName)}</bdi> <span class="tabular">${teamAScore}</span> — <span class="tabular">${teamBScore}</span> <bdi>${escapeHtml(teamBName)}</bdi></div>
+          <div style="font-size:.8rem;opacity:.7;margin-top:2px">${t('winner')}: <bdi>${escapeHtml(winner)}</bdi></div>
         </div>
+        <button class="btn small danger" onclick="event.stopPropagation();state.confirmDeleteId='${f.id}';render()">${t('deleteFrame')}</button>
+      </div>
+    </div>`;
+}
+
+function renderMatchHistoryCard(m){
+  const d = new Date(m.createdAt);
+  const dateStr = d.toLocaleDateString([], {day:'2-digit',month:'short',year:'numeric'});
+  const teamAName = (m.teamA||[]).map(id => (m.playerNames||{})[id]||'').join(' & ');
+  const teamBName = (m.teamB||[]).map(id => (m.playerNames||{})[id]||'').join(' & ');
+  const bestOfLabel = m.raceTo === 2 ? t('bestOf3') : t('bestOf5');
+
+  let resultLine;
+  if (m.status !== 'COMPLETE'){
+    resultLine = t('matchInProgress');
+  } else if (m.winnerTeam === 'DRAW'){
+    resultLine = t('draw');
+  } else {
+    resultLine = `${t('winner')}: ${escapeHtml(m.winnerTeam === 'A' ? teamAName : teamBName)}`;
+  }
+
+  const expanded = state.expandedMatchId === m.id;
+  const matchFrames = state.frames.filter(f => f.matchId === m.id).sort((a,b) => (a.createdAt||0)-(b.createdAt||0));
+  const framesListHtml = matchFrames.map((f,i) => {
+    const tA = frameTeamScore(f,'A'), tB = frameTeamScore(f,'B');
+    return `
+      <div class="stat-line" style="cursor:pointer" onclick="event.stopPropagation();openFrameDetail('${f.id}')">
+        <span>${t('frameOf')} ${i+1}</span>
+        <span class="tabular" style="font-weight:600">${tA} — ${tB}</span>
       </div>`;
-  }).join('');
+  }).join('') || `<div class="empty">${t('noFramesInMatch')}</div>`;
+
+  return `
+    <div class="card">
+      <div style="cursor:pointer" onclick="toggleMatchExpand('${m.id}')">
+        <div style="font-size:.75rem;opacity:.6">${dateStr} · ${bestOfLabel} · ${modeLabel(m.mode)}</div>
+        <div style="font-weight:600;margin-top:2px"><bdi>${escapeHtml(teamAName)}</bdi> <span class="tabular">${m.framesWonA||0}</span> — <span class="tabular">${m.framesWonB||0}</span> <bdi>${escapeHtml(teamBName)}</bdi></div>
+        <div style="font-size:.8rem;opacity:.7;margin-top:2px;display:flex;justify-content:space-between">
+          <span><bdi>${resultLine}</bdi></span>
+          <span>${expanded ? '▲' : '▼'}</span>
+        </div>
+      </div>
+      ${expanded ? `<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px">${framesListHtml}</div>` : ''}
+    </div>`;
+}
+
+function renderHistory(){
+  const standaloneFrames = state.frames.filter(f => !f.matchId);
+  const entries = [
+    ...state.matches.map(m => ({ type:'match', data:m, createdAt:m.createdAt||0 })),
+    ...standaloneFrames.map(f => ({ type:'frame', data:f, createdAt:f.createdAt||0 }))
+  ].sort((a,b) => b.createdAt - a.createdAt);
+
+  const list = entries.map(entry =>
+    entry.type === 'match' ? renderMatchHistoryCard(entry.data) : renderFrameHistoryCard(entry.data)
+  ).join('');
 
   return `
     <div class="topbar">
       <button class="icon-btn" onclick="go('home')">${state.lang==='he'?t('backRtl'):t('back')}</button>
-      <h1>${t('frameHistory')}</h1>
+      <h1>${t('frameMatchHistory')}</h1>
       ${renderLangButton()}
     </div>
     <div class="content stack">
