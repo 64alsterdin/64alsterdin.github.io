@@ -587,35 +587,6 @@ function toggleLang() {
   render();
 }
 
-/* Visible crash/error banner — shows the actual error text on-screen so
-   problems are diagnosable on a phone with no dev console attached, instead
-   of failing silently. */
-function showCrashBanner(message){
-  let banner = document.getElementById('crash-banner');
-  if (!banner){
-    banner = document.createElement('div');
-    banner.id = 'crash-banner';
-    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#B3261E;color:#fff;padding:12px 16px;font-size:.8rem;line-height:1.4;white-space:pre-wrap;word-break:break-word;box-shadow:0 2px 8px rgba(0,0,0,.3)';
-    const closeBtn = document.createElement('div');
-    closeBtn.textContent = '✕ Dismiss';
-    closeBtn.style.cssText = 'text-align:right;font-weight:700;cursor:pointer;margin-bottom:6px;text-decoration:underline';
-    closeBtn.onclick = () => banner.remove();
-    banner.appendChild(closeBtn);
-    const textEl = document.createElement('div');
-    textEl.id = 'crash-banner-text';
-    banner.appendChild(textEl);
-    document.body.appendChild(banner);
-  }
-  document.getElementById('crash-banner-text').textContent = message;
-}
-window.addEventListener('error', (e) => {
-  showCrashBanner('App error: ' + (e.message || e.error || 'unknown error'));
-});
-window.addEventListener('unhandledrejection', (e) => {
-  const reason = e.reason && (e.reason.message || e.reason.code) ? (e.reason.message || e.reason.code) : String(e.reason);
-  showCrashBanner('App error (async): ' + reason);
-});
-
 function render(){
   const app = document.getElementById('app');
   document.getElementById('html-root').setAttribute('dir', state.lang === 'he' ? 'rtl' : 'ltr');
@@ -624,21 +595,17 @@ function render(){
     app.innerHTML = renderConfigWarning();
     return;
   }
-  try{
-    switch(state.screen){
-      case 'home': app.innerHTML = renderHome(); break;
-      case 'roster': app.innerHTML = renderRoster(); break;
-      case 'setup': app.innerHTML = renderSetup(); break;
-      case 'scoring': app.innerHTML = renderScoring(); break;
-      case 'stats': app.innerHTML = renderStats(); break;
-      case 'leaderboard': app.innerHTML = renderLeaderboard(); break;
-      case 'playerDetail': app.innerHTML = renderPlayerDetail(); attachCharts(); break;
-      case 'history': app.innerHTML = renderHistory(); break;
-      case 'frameDetail': app.innerHTML = renderFrameDetail(); break;
-      default: app.innerHTML = renderHome();
-    }
-  } catch(e){
-    showCrashBanner('Render error on "' + state.screen + '": ' + (e.message || e));
+  switch(state.screen){
+    case 'home': app.innerHTML = renderHome(); break;
+    case 'roster': app.innerHTML = renderRoster(); break;
+    case 'setup': app.innerHTML = renderSetup(); break;
+    case 'scoring': app.innerHTML = renderScoring(); break;
+    case 'stats': app.innerHTML = renderStats(); break;
+    case 'leaderboard': app.innerHTML = renderLeaderboard(); break;
+    case 'playerDetail': app.innerHTML = renderPlayerDetail(); attachCharts(); break;
+    case 'history': app.innerHTML = renderHistory(); break;
+    case 'frameDetail': app.innerHTML = renderFrameDetail(); break;
+    default: app.innerHTML = renderHome();
   }
 }
 
@@ -725,7 +692,7 @@ async function loadRoster(){
   try{
     const snap = await db.collection('players').orderBy('name').get();
     state.players = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-  } catch(e){ state.playersError = (e && (e.message || e.code)) || String(e); }
+  } catch(e){ state.playersError = e.message; }
   state.loadingPlayers = false; render();
 }
 function findDuplicatePlayer(name, excludeId){
@@ -747,7 +714,7 @@ async function addPlayer(force){
     await db.collection('players').add({ name, createdAt: Date.now() });
     input.value = '';
     await loadRoster();
-  } catch(e){ state.playersError = (e && (e.message || e.code)) || String(e); render(); }
+  } catch(e){ state.playersError = e.message; render(); }
 }
 function cancelAddDuplicate(){
   state.pendingDuplicateName = null;
@@ -757,7 +724,7 @@ async function deletePlayer(id){
   try{
     await db.collection('players').doc(id).delete();
     await loadRoster();
-  } catch(e){ state.playersError = (e && (e.message || e.code)) || String(e); render(); }
+  } catch(e){ state.playersError = e.message; render(); }
 }
 function startRenamePlayer(id){
   state.renamingPlayerId = id;
@@ -781,7 +748,7 @@ async function saveRenamePlayer(id){
     await db.collection('players').doc(id).update({ name });
     state.renamingPlayerId = null;
     await loadRoster();
-  } catch(e){ state.playersError = (e && (e.message || e.code)) || String(e); render(); }
+  } catch(e){ state.playersError = e.message; render(); }
 }
 function renderRoster(){
   const list = state.players.map(p => {
@@ -912,7 +879,7 @@ function startFrame(){
     state.startingMatch = true; render();
     startMatchSession()
       .then(() => { state.startingMatch = false; beginFrame(); })
-      .catch(e => { state.startingMatch = false; state.playersError = (e && (e.message || e.code)) || String(e); render(); });
+      .catch(e => { state.startingMatch = false; state.playersError = e.message; render(); });
   } else {
     state.currentMatch = null;
     state.matchJustCompleted = null;
@@ -964,7 +931,7 @@ function matchRematch(){
   state.startingMatch = true; render();
   startMatchSession()
     .then(() => { state.startingMatch = false; beginFrame(); })
-    .catch(e => { state.startingMatch = false; state.playersError = (e && (e.message || e.code)) || String(e); render(); });
+    .catch(e => { state.startingMatch = false; state.playersError = e.message; render(); });
 }
 
 /* Resets any match-session selections so "Start New Frame" from the home
@@ -1090,7 +1057,7 @@ function potBall(ballName){
         const remainingSequence = COLOR_SEQUENCE.filter(c => c !== freeColor);
         const nextExpectedColor = remainingSequence.find(c => !subsequentColors.includes(c));
         if (nextExpectedColor && ballName !== nextExpectedColor) {
-          state.validationWarning = t('colorOrderWarning') + ` (potted ${ballName}, expected ${nextExpectedColor}; free colour was ${freeColor})`;
+          state.validationWarning = t('colorOrderWarning');
         }
       }
     } else if (lastEvent && lastEvent.ball !== 'RED' && lastEvent.playerId === state.currentStrikerId) {
@@ -1565,26 +1532,6 @@ function headToHeadStats(idA, idB){
   return { framesTotal, frameWinsA, frameWinsB, frameDraws, matchesTotal, matchWinsA, matchWinsB, matchDraws };
 }
 
-/* Every frame idA and idB played against each other (opposite teams), with
-   each player's score and fouls in that specific frame — used to render the
-   full head-to-head frame list, not just the aggregate tally. */
-function headToHeadFrames(idA, idB){
-  return state.summaries.filter(f => {
-    const teamA = f.teamA || [], teamB = f.teamB || [];
-    const aInA = teamA.includes(idA), aInB = teamB.includes(idA);
-    const bInA = teamA.includes(idB), bInB = teamB.includes(idB);
-    return (aInA && bInB) || (aInB && bInA);
-  }).map(f => ({
-    frame: f,
-    scoreA: (f.finalScores||{})[idA] || 0,
-    scoreB: (f.finalScores||{})[idB] || 0,
-    foulsGivenA: (f.foulPointsGiven||{})[idA] || 0,
-    foulsReceivedA: (f.foulPointsReceived||{})[idA] || 0,
-    foulsGivenB: (f.foulPointsGiven||{})[idB] || 0,
-    foulsReceivedB: (f.foulPointsReceived||{})[idB] || 0
-  })).sort((a,b) => (b.frame.createdAt||0) - (a.frame.createdAt||0));
-}
-
 function renderStats(){
   const playerStats = state.players.map(p => {
     const pFrames = state.summaries.filter(f => (f.playerIds||[]).includes(p.id));
@@ -1713,26 +1660,6 @@ function renderPlayerDetail(){
   if (h2hId){
     const h2h = headToHeadStats(id, h2hId);
     const oppName = (state.players.find(p => p.id === h2hId)||{}).name || '';
-    const myName = state.selectedPlayerName || '';
-    const h2hFrames = headToHeadFrames(id, h2hId);
-
-    const framesListHtml = h2hFrames.map(row => {
-      const f = row.frame;
-      const d = new Date(f.createdAt);
-      const dateStr = d.toLocaleDateString([], {day:'2-digit',month:'short',year:'numeric'});
-      return `
-        <div class="card" style="cursor:pointer;margin-top:8px" onclick="openFrameDetail('${f.id}')">
-          <div style="font-size:.75rem;opacity:.6">${dateStr}</div>
-          <div style="font-weight:600;margin-top:2px"><bdi>${escapeHtml(myName)}</bdi> <span class="tabular">${row.scoreA}</span> — <span class="tabular">${row.scoreB}</span> <bdi>${escapeHtml(oppName)}</bdi></div>
-          <div style="font-size:.8rem;opacity:.7;margin-top:4px">
-            ${t('mostFoulsGivenInFrame')}: <bdi>${escapeHtml(myName)}</bdi> ${row.foulsGivenA} · <bdi>${escapeHtml(oppName)}</bdi> ${row.foulsGivenB}
-          </div>
-          <div style="font-size:.8rem;opacity:.7">
-            ${t('mostFoulsReceivedInFrame')}: <bdi>${escapeHtml(myName)}</bdi> ${row.foulsReceivedA} · <bdi>${escapeHtml(oppName)}</bdi> ${row.foulsReceivedB}
-          </div>
-        </div>`;
-    }).join('');
-
     h2hCard = h2h.framesTotal === 0 && h2h.matchesTotal === 0 ? `
       <div class="empty" style="margin-top:10px">${t('noSharedHistory')}</div>` : `
       <div style="margin-top:10px">
@@ -1746,7 +1673,6 @@ function renderPlayerDetail(){
             <span>${t('matchesRecord')}</span>
             <span class="tabular" style="font-weight:600">${h2h.matchWinsA} — ${h2h.matchWinsB}${h2h.matchDraws?` (${h2h.matchDraws} ${t('draw')})`:''}</span>
           </div>` : ''}
-        ${framesListHtml}
       </div>`;
   }
 
