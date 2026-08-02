@@ -321,6 +321,8 @@ const i18n = {
     rematchSamePlayers: "Start New Frame (same players)",
     rematchPickPlayers: "Start New Frame (pick players)",
     deleteFrameConfirmBody: "This permanently removes the frame and its event log. Every player's statistics will update automatically once it's gone.",
+    deleteMatch: "Delete Match",
+    deleteMatchConfirmBody: "This permanently removes the whole match session, including every frame played within it. This can't be undone.",
     cancel: "Cancel",
     leaderboard: "🏆 Leaderboard",
     leaderboardTitle: "Leaderboard",
@@ -424,6 +426,8 @@ const i18n = {
     rematchSamePlayers: "התחל פריים חדש (אותם שחקנים)",
     rematchPickPlayers: "התחל פריים חדש (בחר שחקנים)",
     deleteFrameConfirmBody: "פעולה זו מוחקת לצמיתות את הפריים ואת יומן האירועים שלו. הסטטיסטיקות של כל שחקן יתעדכנו אוטומטית.",
+    deleteMatch: "מחק משחק",
+    deleteMatchConfirmBody: "פעולה זו מוחקת לצמיתות את כל המשחק, כולל כל הפריימים ששוחקו במסגרתו. לא ניתן לבטל פעולה זו.",
     cancel: "ביטול",
     leaderboard: "🏆 לוח מובילים",
     leaderboardTitle: "לוח מובילים",
@@ -566,6 +570,8 @@ const state = {
   selectedFrame: null,
   confirmDeleteId: null,
   deleting: false,
+  confirmDeleteMatchId: null,
+  deletingMatch: false,
   editingFrame: false,
   editedEvents: null,
   savingEdit: false,
@@ -1063,13 +1069,12 @@ function potBall(ballName){
       if (state.events[i].type === 'SWITCH_TURN' || state.events[i].type === 'FOUL') break;
     }
 
-    // When clearing colors after all reds are potted:
+    // House rule (per your club's play): the colour potted immediately after
+    // the last red is respotted — exactly like every other colour during the
+    // reds phase — so it doesn't count toward or restrict the ascending
+    // sequence at all. The full Yellow→Black order only starts from the
+    // SECOND colour potted after the last red, with nothing excluded.
     if (redsPotted >= state.maxReds) {
-      // Find the index of the final red, then look at any colors potted since.
-      // Real snooker rule: right after the last red, the player may pot ANY
-      // colour of their choice (it's not respotted) — only from the NEXT
-      // colour onward must the strict yellow->black order be followed,
-      // skipping whichever colour was already used as that free pot.
       let lastRedIndex = -1, redCount = 0;
       for (let i = 0; i < state.events.length; i++) {
         const e = state.events[i];
@@ -1083,14 +1088,15 @@ function potBall(ballName){
         .map(e => e.ball);
 
       if (colorsAfterLastRed.length === 0) {
-        // This is the free colour after the last red — any colour is valid.
+        // This is the respotted free colour right after the last red — anything goes.
       } else {
-        const freeColor = colorsAfterLastRed[0];
-        const subsequentColors = colorsAfterLastRed.slice(1);
-        const remainingSequence = COLOR_SEQUENCE.filter(c => c !== freeColor);
-        const nextExpectedColor = remainingSequence.find(c => !subsequentColors.includes(c));
+        // Everything from the SECOND colour onward must follow the full
+        // ascending sequence, starting fresh at Yellow — the respotted
+        // free colour (colorsAfterLastRed[0]) is ignored entirely here.
+        const sequenceColors = colorsAfterLastRed.slice(1);
+        const nextExpectedColor = COLOR_SEQUENCE.find(c => !sequenceColors.includes(c));
         if (nextExpectedColor && ballName !== nextExpectedColor) {
-          state.validationWarning = t('colorOrderWarning') + ` (potted ${ballName}, expected ${nextExpectedColor}; free colour was ${freeColor})`;
+          state.validationWarning = t('colorOrderWarning') + ` (potted ${ballName}, expected ${nextExpectedColor})`;
         }
       }
     } else if (lastEvent && lastEvent.ball !== 'RED' && lastEvent.playerId === state.currentStrikerId) {
@@ -1893,10 +1899,39 @@ function toggleMatchExpand(id){
   render();
 }
 
+/* Keeps a match's cached tally consistent after one of its frames is
+   deleted: recomputes framesWonA/B from whichever sibling frames remain,
+   and removes the match entirely once it has no frames left at all —
+   otherwise it'd linger in History as an empty, un-openable card forever. */
+async function syncMatchAfterFrameChange(matchId){
+  try{
+    const snap = await db.collection('frames').where('matchId', '==', matchId).get();
+    const remaining = snap.docs.map(d => d.data());
+    if (remaining.length === 0){
+      await db.collection('matches').doc(matchId).delete();
+      return;
+    }
+    const framesWonA = remaining.filter(f => f.winnerTeam === 'A').length;
+    const framesWonB = remaining.filter(f => f.winnerTeam === 'B').length;
+    const matchDoc = await db.collection('matches').doc(matchId).get();
+    if (!matchDoc.exists) return;
+    const raceTo = matchDoc.data().raceTo;
+    const complete = framesWonA >= raceTo || framesWonB >= raceTo;
+    await db.collection('matches').doc(matchId).update({
+      framesWonA, framesWonB,
+      status: complete ? 'COMPLETE' : 'IN_PROGRESS',
+      winnerTeam: complete ? (framesWonA > framesWonB ? 'A' : 'B') : null
+    });
+  } catch(e){ /* best-effort cleanup; the frame delete itself already succeeded */ }
+}
+
 async function deleteFrame(id){
   state.deleting = true; render();
   try{
+    const frameData = (state.frames.find(f => f.id === id) || state.selectedFrame || {});
+    const matchId = frameData.matchId;
     await db.collection('frames').doc(id).delete();
+    if (matchId) await syncMatchAfterFrameChange(matchId);
     state.confirmDeleteId = null;
     state.deleting = false;
     if (state.screen === 'frameDetail' && state.selectedFrame && state.selectedFrame.id === id){
@@ -1906,7 +1941,30 @@ async function deleteFrame(id){
     await loadFrameHistory();
   } catch(e){
     state.deleting = false;
-    state.framesError = e.message;
+    state.framesError = (e && (e.message || e.code)) || String(e);
+    render();
+  }
+}
+
+/* Deletes an entire match session: every frame that belongs to it, then the
+   match document itself. Frames are removed too (rather than left as
+   orphaned standalone frames) since a match's frames aren't meaningful
+   as independent records on their own. */
+async function deleteMatch(matchId){
+  state.deletingMatch = true; render();
+  try{
+    const childFrames = state.frames.filter(f => f.matchId === matchId);
+    for (const f of childFrames){
+      await db.collection('frames').doc(f.id).delete();
+    }
+    await db.collection('matches').doc(matchId).delete();
+    state.confirmDeleteMatchId = null;
+    state.deletingMatch = false;
+    if (state.expandedMatchId === matchId) state.expandedMatchId = null;
+    await loadFrameHistory();
+  } catch(e){
+    state.deletingMatch = false;
+    state.framesError = (e && (e.message || e.code)) || String(e);
     render();
   }
 }
@@ -2021,7 +2079,11 @@ function renderMatchHistoryCard(m){
           <span>${expanded ? '▲' : '▼'}</span>
         </div>
       </div>
-      ${expanded ? `<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px">${framesListHtml}</div>` : ''}
+      ${expanded ? `
+        <div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px">
+          ${framesListHtml}
+          <button class="btn small danger" style="margin-top:10px" onclick="event.stopPropagation();state.confirmDeleteMatchId='${m.id}';render()">${t('deleteMatch')}</button>
+        </div>` : ''}
     </div>`;
 }
 
@@ -2045,7 +2107,8 @@ function renderHistory(){
     <div class="content stack">
       ${state.framesLoading ? `<div class="empty">...</div>` : (list || `<div class="empty">No frames recorded yet.</div>`)}
     </div>
-    ${state.confirmDeleteId ? renderDeleteConfirm() : ''}`;
+    ${state.confirmDeleteId ? renderDeleteConfirm() : ''}
+    ${state.confirmDeleteMatchId ? renderDeleteMatchConfirm() : ''}`;
 }
 
 function renderDeleteConfirm(){
@@ -2057,6 +2120,20 @@ function renderDeleteConfirm(){
         <div style="display:flex;gap:10px;margin-top:16px">
           <button class="btn secondary" ${state.deleting?'disabled':''} onclick="state.confirmDeleteId=null;render()">${t('cancel')}</button>
           <button class="btn danger" ${state.deleting?'disabled':''} onclick="deleteFrame('${state.confirmDeleteId}')">${state.deleting?'…':t('deleteFrame')}</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderDeleteMatchConfirm(){
+  return `
+    <div class="modal-backdrop" onclick="if(event.target===this && !${state.deletingMatch}){state.confirmDeleteMatchId=null;render();}">
+      <div class="modal">
+        <h2>${t('confirmDelete')}</h2>
+        <p style="margin:12px 0">${t('deleteMatchConfirmBody')}</p>
+        <div style="display:flex;gap:10px;margin-top:16px">
+          <button class="btn secondary" ${state.deletingMatch?'disabled':''} onclick="state.confirmDeleteMatchId=null;render()">${t('cancel')}</button>
+          <button class="btn danger" ${state.deletingMatch?'disabled':''} onclick="deleteMatch('${state.confirmDeleteMatchId}')">${state.deletingMatch?'…':t('deleteMatch')}</button>
         </div>
       </div>
     </div>`;
